@@ -111,7 +111,12 @@ pub enum Command {
     /// Pull back a deployed copy into the repo.
     PullBack {
         /// File to pull back (filename or full destination path).
-        file: String,
+        #[arg(required_unless_present = "all")]
+        file: Option<String>,
+
+        /// Pull back all modified entries.
+        #[arg(long)]
+        all: bool,
     },
 
     /// List all tracked entries, grouped by category.

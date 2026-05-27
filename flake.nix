@@ -24,6 +24,9 @@
         naersk-lib = pkgs.callPackage naersk {
           cargo = toolchain;
           rustc = toolchain;
+          # fetchurl = { curlOpts ? "", ... }@args: pkgs.fetchurl (args // {
+          #   curlOpts = "${curlOpts} --user-agent Nixpkgs/26.11";
+          # });
         };
       in
       {
