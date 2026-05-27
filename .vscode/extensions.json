@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "auricvex.flake-env",
+        "tombi-toml.tombi",
+        "rust-lang.rust-analyzer"
+    ]
+}

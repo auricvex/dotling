@@ -1,0 +1,94 @@
+# =============================================================================
+# Clippy Configuration (clippy.toml)
+# =============================================================================
+# This file tunes the *behavior* of specific Clippy lints (thresholds, banned
+# items, etc.). Lint *levels* (warn/deny/allow) are configured in Cargo.toml
+# under [workspace.lints.clippy].
+#
+# Verified against: clippy 0.1.97 (nightly 2026-05-20)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Complexity Thresholds
+# ---------------------------------------------------------------------------
+# Cognitive complexity measures how hard a function is to understand.
+# Default is 25. We tighten to 20 because Axon's protocol state machines
+# should be decomposed into small, testable functions.
+cognitive-complexity-threshold = 20
+
+# Type complexity: triggers on deeply nested generic types.
+# Default is 250. We keep it slightly tighter for readability.
+type-complexity-threshold = 200
+
+# Maximum lines in a single function before triggering `too_many_lines`.
+# Protocol handlers should be concise.
+too-many-lines-threshold = 80
+
+# Maximum number of function arguments before triggering `too_many_arguments`.
+# structs are the preferred way to pass grouped parameters.
+too-many-arguments-threshold = 6
+
+# Maximum number of bool fields in a struct before triggering `struct_excessive_bools`.
+max-struct-bools = 3
+
+# ---------------------------------------------------------------------------
+# Disallowed Methods
+# ---------------------------------------------------------------------------
+# Ban methods that are footguns in async / protocol code.
+disallowed-methods = [
+    # Blocking sleep must never be used in async code — it blocks the executor.
+    { path = "std::thread::sleep", reason = "use tokio::time::sleep in async code" },
+
+    # std::process::exit bypasses destructors and Drop cleanup.
+    { path = "std::process::exit", reason = "return from main or use controlled shutdown" },
+
+    # Env::temp_dir can be surprising across platforms.
+    { path = "std::env::temp_dir", reason = "use the tempfile crate for temporary directories" },
+]
+
+# ---------------------------------------------------------------------------
+# Disallowed Types
+# ---------------------------------------------------------------------------
+# Guide implementors toward the correct concurrency primitives for async Axon.
+disallowed-types = [
+    # In async code, std::sync::Mutex blocks the executor thread.
+    # Use tokio::sync::Mutex or parking_lot::Mutex (for short critical sections).
+    { path = "std::sync::Mutex", reason = "use tokio::sync::Mutex for async or parking_lot::Mutex for sync-only critical sections" },
+
+    # Same rationale as Mutex — std RwLock blocks.
+    { path = "std::sync::RwLock", reason = "use tokio::sync::RwLock for async or parking_lot::RwLock for sync-only critical sections" },
+
+    # std::sync::Condvar is incompatible with async runtimes.
+    { path = "std::sync::Condvar", reason = "use tokio::sync::Notify or tokio::sync::watch instead" },
+]
+
+# ---------------------------------------------------------------------------
+# Disallowed Macros
+# ---------------------------------------------------------------------------
+disallowed-macros = [
+    # dbg! should never appear in committed protocol code.
+    { path = "std::dbg", reason = "use tracing::debug! or tracing::trace! instead" },
+
+    # todo! should be caught before merge.
+    { path = "core::todo", reason = "implement the missing functionality or file an issue" },
+
+    # unimplemented! should not ship in release code.
+    { path = "core::unimplemented", reason = "implement the missing functionality or return an error" },
+]
+
+# ---------------------------------------------------------------------------
+# Large / Async Safety
+# ---------------------------------------------------------------------------
+# Futures larger than this (in bytes) trigger `large_futures`.
+# Large futures cause stack pressure and poor performance.
+future-size-threshold = 16384
+
+# Vectors pre-allocating more than this many elements trigger `large_stack_arrays`.
+large-error-threshold = 256
+
+# ---------------------------------------------------------------------------
+# Documentation
+# ---------------------------------------------------------------------------
+# Enable missing-docs-in-crate-items lint to require docs on all items,
+# not just public ones. The lint level is controlled in Cargo.toml.
+missing-docs-in-crate-items = true

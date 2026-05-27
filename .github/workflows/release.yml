@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            archive: tar.gz
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            archive: tar.gz
+            cross: true
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            archive: tar.gz
+            cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            runner: windows-latest
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --locked --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
+        shell: bash
+
+      - name: Determine binary name
+        id: bin
+        run: |
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            echo "name=dotling.exe" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=dotling" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: Determine archive name
+        id: archive
+        run: |
+          target="${{ matrix.target }}"
+          case "$target" in
+            x86_64-unknown-linux-gnu)     slug="x86_64-linux"         ;;
+            x86_64-unknown-linux-musl)    slug="x86_64-linux-musl"    ;;
+            aarch64-unknown-linux-gnu)    slug="aarch64-linux"        ;;
+            x86_64-apple-darwin)          slug="x86_64-macos"         ;;
+            aarch64-apple-darwin)         slug="aarch64-macos"        ;;
+            x86_64-pc-windows-msvc)       slug="x86_64-windows"       ;;
+            aarch64-pc-windows-msvc)      slug="aarch64-windows"      ;;
+          esac
+          echo "name=dotling-${slug}.${{ matrix.archive }}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ steps.archive.outputs.name }} ${{ steps.bin.outputs.name }}
+        shell: bash
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../${{ steps.archive.outputs.name }} ${{ steps.bin.outputs.name }}
+        shell: bash
+
+      - name: Generate SHA256 checksum
+        run: |
+          if command -v sha256sum &> /dev/null; then
+            sha256sum ${{ steps.archive.outputs.name }} > ${{ steps.archive.outputs.name }}.sha256
+          else
+            shasum -a 256 ${{ steps.archive.outputs.name }} > ${{ steps.archive.outputs.name }}.sha256
+          fi
+        shell: bash
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.archive.outputs.name }}
+            ${{ steps.archive.outputs.name }}.sha256

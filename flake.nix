@@ -9,40 +9,35 @@
 
   outputs =
     {
-      self,
       nixpkgs,
       utils,
       naersk,
       rust-overlay,
+      ...
     }:
     utils.lib.eachDefaultSystem (
       system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
-        naersk-lib = pkgs.callPackage naersk { };
-        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        naersk-lib = pkgs.callPackage naersk {
+          cargo = toolchain;
+          rustc = toolchain;
+        };
       in
       {
-        defaultPackage = naersk-lib.buildPackage ./.;
-        devShell =
-          with pkgs;
-          mkShell {
-            nativeBuildInputs = [
-              rustToolchain
-            ];
-            RUST_BACKTRACE = "1";
-            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+        packages.default = naersk-lib.buildPackage {
+          src = ./.;
+        };
 
-            shellHook = ''
-              if [ -z "$NIX_FISH_SHELL" ]; then
-                export NIX_FISH_SHELL=1
-                case "$-" in
-                  *i*) exec ${pkgs.fish}/bin/fish ;;
-                esac
-              fi
-            '';
-          };
+        devShell = pkgs.mkShell {
+          nativeBuildInputs = [
+            toolchain
+            pkgs.cargo-audit
+            pkgs.cargo-deny
+          ];
+        };
       }
     );
 }

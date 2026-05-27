@@ -1,0 +1,122 @@
+# =============================================================================
+# Rustfmt Configuration
+# =============================================================================
+# Requires: nightly toolchain (already configured in rust-toolchain.toml)
+# Verified against: rustfmt 1.9.0-nightly (2026-05-20)
+#
+# Run:   cargo fmt
+# Check: cargo fmt --all -- --check
+# =============================================================================
+
+# Unlock nightly-only formatting options
+unstable_features = true
+
+# ---------------------------------------------------------------------------
+# Edition & Style
+# ---------------------------------------------------------------------------
+# Parser edition — must match Cargo.toml `edition`
+edition = "2024"
+
+# Style guide edition — use the latest stable style guide
+style_edition = "2024"
+
+# ---------------------------------------------------------------------------
+# Width & Layout
+# ---------------------------------------------------------------------------
+# Hard line-width limit. 100 is the Rust community consensus for readability
+# without being overly narrow.
+max_width = 100
+
+# Use spaces, 4-space indentation (Rust default)
+hard_tabs = false
+tab_spaces = 4
+
+# Use the default heuristics for deciding when to break expressions
+use_small_heuristics = "Default"
+
+# ---------------------------------------------------------------------------
+# Imports
+# ---------------------------------------------------------------------------
+# Group imports into: std/core → external crates → crate-local
+# This makes dependency boundaries visually obvious in every file.
+group_imports = "StdExternalCrate"
+
+# Merge imports from the same crate into a single `use` statement
+# e.g. `use serde::{Deserialize, Serialize};` instead of two separate lines
+imports_granularity = "Crate"
+
+# Always sort imports alphabetically
+reorder_imports = true
+
+# ---------------------------------------------------------------------------
+# Items & Modules
+# ---------------------------------------------------------------------------
+# Sort `mod` declarations alphabetically
+reorder_modules = true
+
+# Sort items within `impl` blocks (associated types → consts → methods)
+reorder_impl_items = true
+
+# ---------------------------------------------------------------------------
+# Expressions & Operators
+# ---------------------------------------------------------------------------
+# When a binary expression wraps, put the operator at the front of the new line
+# This makes it easy to scan the left edge for operators.
+binop_separator = "Front"
+
+# Add trailing commas on multi-line lists (but not single-line)
+trailing_comma = "Vertical"
+
+# ---------------------------------------------------------------------------
+# Functions & Structs
+# ---------------------------------------------------------------------------
+# Function parameters: each on its own line when they don't fit on one line
+fn_params_layout = "Tall"
+
+# Use field init shorthand: `Foo { bar }` instead of `Foo { bar: bar }`
+use_field_init_shorthand = true
+
+# Replace `try!` with `?` operator
+use_try_shorthand = true
+
+# Merge multiple `#[derive(...)]` into one
+merge_derives = true
+
+# Force explicit ABI on extern items: `extern "C"` not just `extern`
+force_explicit_abi = true
+
+# ---------------------------------------------------------------------------
+# Comments & Documentation
+# ---------------------------------------------------------------------------
+# Wrap comments to fit within max_width
+wrap_comments = true
+
+# Max width for comments (same as code)
+comment_width = 100
+
+# Format code blocks inside doc comments (```rust ... ```)
+format_code_in_doc_comments = true
+
+# ---------------------------------------------------------------------------
+# Macros
+# ---------------------------------------------------------------------------
+# Format the metavariable patterns in macro_rules! definitions
+format_macro_matchers = true
+
+# Format the bodies of macro_rules! definitions
+format_macro_bodies = true
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+# Enforce Unix line endings for cross-platform consistency
+newline_style = "Unix"
+
+# Remove unnecessary nested parentheses
+remove_nested_parens = true
+
+# Normalize doc attributes (`#[doc = "..."]`) to doc comments (`/// ...`)
+normalize_doc_attributes = true
+
+# Maximum 1 blank line between items (prevent excessive vertical whitespace)
+blank_lines_upper_bound = 1
