@@ -1,5 +1,7 @@
-use std::io::{Read, Write};
-use std::str::FromStr;
+use std::{
+    io::{Read, Write},
+    str::FromStr,
+};
 
 use age::x25519::{Identity, Recipient};
 use secrecy::ExposeSecret;
@@ -10,9 +12,8 @@ use crate::error::{DotlingError, Result};
 pub fn encrypt(plaintext: &[u8], recipient_strings: &[String]) -> Result<Vec<u8>> {
     let mut recipients: Vec<Box<dyn age::Recipient + Send>> = Vec::new();
     for r in recipient_strings {
-        let recipient = Recipient::from_str(r).map_err(|e| {
-            DotlingError::Crypto(format!("Invalid recipient '{r}': {e}"))
-        })?;
+        let recipient = Recipient::from_str(r)
+            .map_err(|e| DotlingError::Crypto(format!("Invalid recipient '{r}': {e}")))?;
         recipients.push(Box::new(recipient));
     }
 
@@ -22,8 +23,10 @@ pub fn encrypt(plaintext: &[u8], recipient_strings: &[String]) -> Result<Vec<u8>
         ));
     }
 
-    let encryptor = age::Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref() as &dyn age::Recipient))
-        .map_err(|e| DotlingError::Crypto(format!("Failed to create encryptor: {e}")))?;
+    let encryptor = age::Encryptor::with_recipients(
+        recipients.iter().map(|r| r.as_ref() as &dyn age::Recipient),
+    )
+    .map_err(|e| DotlingError::Crypto(format!("Failed to create encryptor: {e}")))?;
 
     let mut encrypted = Vec::new();
     {
@@ -43,9 +46,8 @@ pub fn encrypt(plaintext: &[u8], recipient_strings: &[String]) -> Result<Vec<u8>
 
 /// Decrypts ciphertext using the provided identity string.
 pub fn decrypt(ciphertext: &[u8], identity_string: &str) -> Result<Vec<u8>> {
-    let identity = Identity::from_str(identity_string).map_err(|e| {
-        DotlingError::Crypto(format!("Invalid identity key: {e}"))
-    })?;
+    let identity = Identity::from_str(identity_string)
+        .map_err(|e| DotlingError::Crypto(format!("Invalid identity key: {e}")))?;
 
     let decryptor = age::Decryptor::new(ciphertext)
         .map_err(|e| DotlingError::Crypto(format!("Decryption failed: {e}")))?;

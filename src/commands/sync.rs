@@ -35,13 +35,8 @@ pub fn run(printer: &Printer, push_first: bool, force: bool, dry_run: bool) -> R
 }
 
 /// Pushes local changes before syncing.
-fn push_changes(printer: &Printer, git: &Git, repo_root: &std::path::Path) -> Result<()> {
-    printer.action("push", repo_root);
-    git.stage_all()?;
-    git.commit("dotling: update dotfiles")?;
-    git.push()?;
-    printer.ok("pushed", repo_root);
-    Ok(())
+fn push_changes(printer: &Printer, _git: &Git, _repo_root: &std::path::Path) -> Result<()> {
+    crate::commands::push::run(printer, Some("dotling: update dotfiles"))
 }
 
 /// Pulls remote changes with rebase.

@@ -1,5 +1,4 @@
-use std::fmt::Write as _;
-use std::fs;
+use std::{fmt::Write as _, fs};
 
 use crate::{
     crypto,
@@ -37,14 +36,18 @@ pub fn run(printer: &Printer, save: bool) -> Result<()> {
                 use std::os::unix::fs::OpenOptionsExt;
                 let mut options = fs::OpenOptions::new();
                 options.write(true).create(true).mode(0o600);
-                let _ = options.open(&identity_file).map_err(io_err(&identity_file))?;
+                let _ = options
+                    .open(&identity_file)
+                    .map_err(io_err(&identity_file))?;
             }
 
             fs::write(&identity_file, content).map_err(io_err(&identity_file))?;
             printer.success(&format!("Saved identity to {}", identity_file.display()));
             println!("  Public key (add this to .dotling.toml [encryption] recipients): {public}");
         } else {
-            return Err(DotlingError::Crypto("Could not determine config directory to save identity".to_string()));
+            return Err(DotlingError::Crypto(
+                "Could not determine config directory to save identity".to_string(),
+            ));
         }
     } else {
         printer.success("Generated keypair:");

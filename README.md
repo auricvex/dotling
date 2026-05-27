@@ -90,11 +90,11 @@ dotling init git@github.com:you/dotfiles.git
 | `dotling unlink <path>` | Undeploy and remove from tracking |
 | `dotling keygen` | Generate a new age encryption keypair |
 | `dotling sync` | Pull changes from remote and re-deploy entries |
-| `dotling push [message]` | Stage, commit, and push all changes |
+| `dotling push [message]` | Auto-pull modified copies, stage, commit, and push |
 | `dotling status` | Show deployment status of all tracked entries |
 | `dotling diff [file]` | Show diff between repo source and deployed file |
 | `dotling apply` | Re-deploy missing or broken entries |
-| `dotling pull-back <file>` | Copy a deployed file back into the repo |
+| `dotling pull-back [file]` | Copy deployed file(s) back to repo (supports `--all`) |
 | `dotling list` | List all tracked entries grouped by category |
 | `dotling doctor` | Audit repository health and report issues |
 
@@ -110,6 +110,7 @@ dotling init git@github.com:you/dotfiles.git
 | `--os <platform>` | link | Target OS: `all`, `linux`, `macos`, `windows` |
 | `--save` | keygen | Save generated secret key to config directory |
 | `--purge` | unlink | Also delete the source file from the repo |
+| `--all` | pull-back | Pull back all modified entries into the repo |
 | `--push` | sync | Push local changes before pulling |
 | `--force` | sync | Overwrite modified copies during re-apply |
 | `--dry-run` | sync, apply | Show what would change without modifying |
@@ -120,7 +121,7 @@ dotling moves your config files into a central git repository and replaces them 
 
 **Symlinks** (default): the deployed file points to the repo — edits are instantly reflected.
 
-**Copies** (`--copy`): the deployed file is a standalone copy — use `dotling pull-back` to sync changes back.
+**Copies** (`--copy`): the deployed file is a standalone copy. Local modifications are automatically synced back to the repo when you run `dotling push`, or manually using `dotling pull-back --all`.
 
 ### Path Mapping
 
