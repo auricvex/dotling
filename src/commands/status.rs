@@ -1,9 +1,6 @@
 use std::fs;
 
-use crate::config::Config;
-use crate::error::Result;
-use crate::platform;
-use crate::{store, ui};
+use crate::{config::Config, error::Result, platform, store, ui};
 
 /// Show status of all tracked entries.
 #[allow(clippy::too_many_lines)]

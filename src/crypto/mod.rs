@@ -8,8 +8,10 @@
 pub mod vault;
 
 use base64::prelude::*;
-use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use chacha20poly1305::{
+    ChaCha20Poly1305, Nonce,
+    aead::{Aead, KeyInit},
+};
 use rand::Rng;
 
 use crate::error::{Error, Result};

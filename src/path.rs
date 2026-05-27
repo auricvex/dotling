@@ -8,18 +8,16 @@ use crate::error::{Error, Result};
 pub fn home_dir() -> Result<PathBuf> {
     #[cfg(unix)]
     {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| Error::User("could not determine home directory ($HOME is unset)".into()))
+        std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
+            Error::User("could not determine home directory ($HOME is unset)".into())
+        })
     }
     #[cfg(windows)]
     {
         std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
             .ok_or_else(|| {
-                Error::User(
-                    "could not determine home directory (%USERPROFILE% is unset)".into(),
-                )
+                Error::User("could not determine home directory (%USERPROFILE% is unset)".into())
             })
     }
 }
@@ -86,7 +84,18 @@ pub fn relative_to(target: &Path, base: &Path) -> Option<PathBuf> {
 ///
 /// These patterns determine how home-directory paths map to repo subdirectories.
 const CATEGORY_RULES: &[(&str, &[&str])] = &[
-    ("shell", &[".zshrc", ".zshenv", ".zprofile", ".bashrc", ".bash_profile", ".profile", ".fishrc"]),
+    (
+        "shell",
+        &[
+            ".zshrc",
+            ".zshenv",
+            ".zprofile",
+            ".bashrc",
+            ".bash_profile",
+            ".profile",
+            ".fishrc",
+        ],
+    ),
     ("git", &[".gitconfig", ".gitignore_global"]),
     ("vim", &[".vimrc", ".gvimrc"]),
     ("tmux", &[".tmux.conf"]),
@@ -103,9 +112,12 @@ const CATEGORY_RULES: &[(&str, &[&str])] = &[
 /// - `~/.somerc` → `home/somerc`
 pub fn map_to_repo(home_path: &Path) -> Result<PathBuf> {
     let home = home_dir()?;
-    let rel = home_path
-        .strip_prefix(&home)
-        .map_err(|_| Error::User(format!("`{}` is not inside the home directory", home_path.display())))?;
+    let rel = home_path.strip_prefix(&home).map_err(|_| {
+        Error::User(format!(
+            "`{}` is not inside the home directory",
+            home_path.display()
+        ))
+    })?;
 
     let rel_str = rel.to_string_lossy();
 
@@ -144,7 +156,8 @@ pub fn resolve(path: &Path) -> Result<PathBuf> {
     if expanded.is_absolute() {
         Ok(normalize(&expanded))
     } else {
-        let cwd = std::env::current_dir().map_err(|e| Error::io(".", "get current directory", e))?;
+        let cwd =
+            std::env::current_dir().map_err(|e| Error::io(".", "get current directory", e))?;
         Ok(normalize(&cwd.join(&expanded)))
     }
 }
@@ -192,7 +205,10 @@ mod tests {
     fn config_mapping() {
         let home = home_dir().unwrap();
         let p = home.join(".config/nvim/init.lua");
-        assert_eq!(map_to_repo(&p).unwrap(), PathBuf::from("config/nvim/init.lua"));
+        assert_eq!(
+            map_to_repo(&p).unwrap(),
+            PathBuf::from("config/nvim/init.lua")
+        );
     }
 
     #[test]

@@ -4,16 +4,19 @@
 //! - `identity.enc` — password-encrypted secret material
 //! - `config.toml`  — vault metadata (not secret)
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use base64::prelude::*;
-use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
-
-use crate::error::{Error, Result};
+use chacha20poly1305::{
+    ChaCha20Poly1305, Nonce,
+    aead::{Aead, KeyInit},
+};
 
 use super::{derive_key, hex_decode, hex_encode, random_bytes};
+use crate::error::{Error, Result};
 
 // ── Public API ────────────────────────────────────────────────────
 

@@ -1,6 +1,4 @@
-use crate::config::Config;
-use crate::error::Result;
-use crate::{store, ui};
+use crate::{config::Config, error::Result, store, ui};
 
 /// Audit repository health.
 #[allow(clippy::too_many_lines)]
@@ -17,10 +15,7 @@ pub fn run() -> Result<()> {
             ui::success(&format!("repo: {}", repo_root.display()));
             ok += 1;
         } else {
-            ui::error(&format!(
-                "repo directory missing: {}",
-                repo_root.display()
-            ));
+            ui::error(&format!("repo directory missing: {}", repo_root.display()));
             // errors += 1 — early return so we don't need to track it
             ui::summary(0, 0, 1);
             return Ok(());
@@ -31,19 +26,13 @@ pub fn run() -> Result<()> {
         if config_path.exists() {
             match Config::load(&config_path) {
                 Ok(config) => {
-                    ui::success(&format!(
-                        "config: {} entries",
-                        config.entries.len()
-                    ));
+                    ui::success(&format!("config: {} entries", config.entries.len()));
                     ok += 1;
 
                     // 3. Check each entry
                     for entry in &config.entries {
-                        let state = crate::deploy::check_state(
-                            entry,
-                            &repo_root,
-                            config.settings.method,
-                        );
+                        let state =
+                            crate::deploy::check_state(entry, &repo_root, config.settings.method);
 
                         let source_path = if entry.encrypted {
                             repo_root.join(format!("{}.enc", entry.source))
@@ -53,10 +42,7 @@ pub fn run() -> Result<()> {
 
                         // Check source exists in repo
                         if !source_path.exists() {
-                            ui::error(&format!(
-                                "missing source: {}",
-                                entry.source
-                            ));
+                            ui::error(&format!("missing source: {}", entry.source));
                             errors += 1;
                             continue;
                         }

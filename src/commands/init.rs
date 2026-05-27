@@ -1,10 +1,10 @@
-use std::fs;
-use std::path::Path;
-use std::process::Command;
+use std::{fs, path::Path, process::Command};
 
-use crate::config::Config;
-use crate::error::{Error, Result};
-use crate::{store, ui};
+use crate::{
+    config::Config,
+    error::{Error, Result},
+    store, ui,
+};
 
 /// Initialize a new dotfiles repository or adopt an existing one.
 pub fn run(path_or_url: &str) -> Result<()> {
