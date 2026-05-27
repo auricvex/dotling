@@ -47,19 +47,14 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-latest
             archive: tar.gz
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            archive: zip
-          - target: aarch64-pc-windows-msvc
-            runner: windows-latest
-            archive: zip
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
