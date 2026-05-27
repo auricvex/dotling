@@ -27,8 +27,21 @@ pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Re
             continue;
         }
 
+        let mut final_perms = None;
+        if let Ok(Some(perms)) = crate::fs::get_permissions(&resolved) {
+            final_perms = Some(perms);
+        }
+
         if resolved.is_dir() {
-            match add_directory(&resolved, &repo_root, &mut config, encrypt, copy, os) {
+            match add_directory(
+                &resolved,
+                &repo_root,
+                &mut config,
+                encrypt,
+                copy,
+                os,
+                final_perms,
+            ) {
                 Ok(n) => added += n,
                 Err(e) => {
                     ui::error(&format!("{e}"));
@@ -36,7 +49,15 @@ pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Re
                 }
             }
         } else {
-            match add_file(&resolved, &repo_root, &mut config, encrypt, copy, os) {
+            match add_file(
+                &resolved,
+                &repo_root,
+                &mut config,
+                encrypt,
+                copy,
+                os,
+                final_perms,
+            ) {
                 Ok(()) => added += 1,
                 Err(e) => {
                     ui::error(&format!("{e}"));
@@ -53,6 +74,7 @@ pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Re
 }
 
 /// Add a single file to tracking.
+#[allow(clippy::too_many_arguments)]
 fn add_file(
     file_path: &Path,
     repo_root: &Path,
@@ -60,6 +82,7 @@ fn add_file(
     encrypt: bool,
     copy: bool,
     os: Option<&str>,
+    permissions: Option<u32>,
 ) -> Result<()> {
     let repo_relative = path::map_to_repo(file_path)?;
     let target = path::collapse_tilde(file_path);
@@ -103,6 +126,7 @@ fn add_file(
         encrypted: encrypt,
         directory: false,
         os: os.map(String::from),
+        permissions,
     };
 
     config.add_entry(entry)?;
@@ -134,12 +158,17 @@ fn add_file(
         crate::fs::create_symlink(&repo_dest, &expanded_target)?;
     }
 
+    if let Some(perms) = permissions {
+        crate::fs::set_permissions(&expanded_target, perms)?;
+    }
+
     ui::success(&format!("{source_str} → {target_str}"));
 
     Ok(())
 }
 
 /// Add a directory to tracking.
+#[allow(clippy::too_many_arguments)]
 fn add_directory(
     dir_path: &Path,
     repo_root: &Path,
@@ -147,6 +176,7 @@ fn add_directory(
     encrypt: bool,
     copy: bool,
     os: Option<&str>,
+    permissions: Option<u32>,
 ) -> Result<u32> {
     if encrypt {
         return Err(Error::User(
@@ -179,6 +209,7 @@ fn add_directory(
         encrypted: false,
         directory: true,
         os: os.map(String::from),
+        permissions,
     };
 
     config.add_entry(entry)?;
@@ -192,6 +223,10 @@ fn add_directory(
         copy_dir_recursive(&repo_dest, &expanded_target)?;
     } else {
         crate::fs::create_symlink(&repo_dest, &expanded_target)?;
+    }
+
+    if let Some(perms) = permissions {
+        crate::fs::set_permissions(&expanded_target, perms)?;
     }
 
     ui::success(&format!("{source_str} → {target_str} (directory)"));
