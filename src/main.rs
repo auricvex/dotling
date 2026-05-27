@@ -50,7 +50,7 @@ fn main() -> std::process::ExitCode {
         cli::Command::Status => commands::status::run(&printer),
         cli::Command::Diff { file } => commands::diff::run(&printer, file.as_deref()),
         cli::Command::Apply { dry_run } => commands::apply::run(&printer, dry_run),
-        cli::Command::PullBack { file } => commands::pull_back::run(&printer, &file),
+        cli::Command::PullBack { file, all } => commands::pull_back::run(&printer, file.as_deref(), all),
         cli::Command::List => commands::list::run(&printer),
         cli::Command::Keygen { save } => commands::keygen::run(&printer, save),
     };

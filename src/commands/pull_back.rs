@@ -15,14 +15,52 @@ use crate::{
 };
 
 /// Runs the `pull-back` command.
-pub fn run(printer: &Printer, file: &str) -> Result<()> {
+pub fn run(printer: &Printer, file: Option<&str>, all: bool) -> Result<()> {
     let repo_root = repo::get_repo_root()?;
     let config = Config::load(&repo_root)?;
     let git = Git::new(repo_root.clone());
+    let linker = crate::linker::Linker::new(repo_root.clone());
+
+    if all {
+        let mut count = 0;
+        for entry in config.active_entries() {
+            if linker.check_entry(entry)? == crate::linker::EntryStatus::Modified {
+                pull_back_entry(printer, &repo_root, &config, &git, entry)?;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            printer.success("No modified entries to pull back.");
+        } else {
+            printer.success(&format!("Pulled back {} modified entry/entries.", count));
+            printer.hint("Use `dotling push` to commit and push changes.");
+        }
+        return Ok(());
+    }
+
+    let file_str = file.unwrap_or("");
+    if file_str.is_empty() {
+        return Err(DotlingError::PathNotFound(std::path::PathBuf::from("no file specified")));
+    }
 
     // Try to find the entry by full dest path or by filename
-    let entry = find_entry(&config, file)?;
+    let entry = find_entry(&config, file_str)?;
+    pull_back_entry(printer, &repo_root, &config, &git, entry)?;
+    
+    if entry.method != LinkMethod::Symlink {
+        printer.hint("Use `dotling push` to commit and push.");
+    }
+    
+    Ok(())
+}
 
+fn pull_back_entry(
+    printer: &Printer,
+    repo_root: &Path,
+    config: &Config,
+    git: &Git,
+    entry: &crate::config::LinkEntry,
+) -> Result<()> {
     match entry.method {
         LinkMethod::Symlink => {
             let dest_path = repo::src_to_dest_path(&entry.dest)?;
@@ -30,7 +68,6 @@ pub fn run(printer: &Printer, file: &str) -> Result<()> {
                 "\"{}\" is deployed as a symlink — it already IS the repo source.",
                 dest_path.display()
             ));
-            printer.hint("Use `dotling push` to commit and push changes.");
             Ok(())
         }
         LinkMethod::Copy => {
@@ -46,7 +83,6 @@ pub fn run(printer: &Printer, file: &str) -> Result<()> {
 
             git.stage(&src_path)?;
             printer.ok("staged", &src_path);
-            printer.hint("Use `dotling push` to commit and push.");
 
             Ok(())
         }
@@ -65,7 +101,6 @@ pub fn run(printer: &Printer, file: &str) -> Result<()> {
 
             git.stage(&src_path)?;
             printer.ok("staged", &src_path);
-            printer.hint("Use `dotling push` to commit and push.");
 
             Ok(())
         }
