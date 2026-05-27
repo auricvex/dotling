@@ -170,25 +170,26 @@ mod tests {
 
     #[test]
     fn walk_finds_files() {
-        let dir = std::env::temp_dir().join("dotling_test_walk");
-        let _ = fs::remove_dir_all(&dir);
+        let temp_dir_obj = tempfile::tempdir().unwrap();
+        let dir = temp_dir_obj.path();
         fs::create_dir_all(dir.join("a/b")).unwrap();
         fs::write(dir.join("a/file1.txt"), "hello").unwrap();
         fs::write(dir.join("a/b/file2.txt"), "world").unwrap();
         fs::write(dir.join("a/.hidden"), "secret").unwrap();
 
-        let files = walk_dir(&dir, false).unwrap();
+        let files = walk_dir(dir, false).unwrap();
         assert_eq!(files.len(), 2);
 
-        let files_hidden = walk_dir(&dir, true).unwrap();
+        let files_hidden = walk_dir(dir, true).unwrap();
         assert_eq!(files_hidden.len(), 3);
 
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn atomic_write_roundtrip() {
-        let path = std::env::temp_dir().join("dotling_test_atomic");
+        let temp_dir_obj = tempfile::tempdir().unwrap();
+        let path = temp_dir_obj.path().join("dotling_test_atomic");
         atomic_write(&path, b"test data").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "test data");
         let _ = fs::remove_file(&path);

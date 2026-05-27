@@ -487,8 +487,8 @@ os = "macos"
 
         assert_eq!(parsed.entries.len(), 2);
         assert_eq!(parsed.entries[0].source, "shell/zshrc");
-        assert_eq!(parsed.entries[1].encrypted, true);
-        assert_eq!(parsed.entries[1].directory, true);
+        assert!(parsed.entries[1].encrypted);
+        assert!(parsed.entries[1].directory);
     }
 
     #[test]
