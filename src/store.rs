@@ -1,8 +1,12 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::error::{Error, Result};
-use crate::path;
+use crate::{
+    error::{Error, Result},
+    path,
+};
 
 const STATE_FILE: &str = "state.toml";
 
@@ -59,9 +63,7 @@ pub fn set_repo_root(repo_root: &Path) -> Result<()> {
 /// message if no repo is registered.
 pub fn require_repo_root() -> Result<PathBuf> {
     get_repo_root()?.ok_or_else(|| {
-        Error::User(
-            "no dotfiles repository found — run `dotling init <path>` first".into(),
-        )
+        Error::User("no dotfiles repository found — run `dotling init <path>` first".into())
     })
 }
 

@@ -1,6 +1,8 @@
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use crate::error::{Error, Result};
 
@@ -15,11 +17,7 @@ pub fn walk_dir(root: &Path, include_hidden: bool) -> Result<Vec<PathBuf>> {
     Ok(results)
 }
 
-fn walk_dir_inner(
-    dir: &Path,
-    include_hidden: bool,
-    results: &mut Vec<PathBuf>,
-) -> Result<()> {
+fn walk_dir_inner(dir: &Path, include_hidden: bool, results: &mut Vec<PathBuf>) -> Result<()> {
     let entries = fs::read_dir(dir).map_err(|e| Error::io(dir, "read directory", e))?;
 
     for entry in entries {
@@ -135,8 +133,7 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
 
 /// Check if a path is a symlink.
 pub fn is_symlink(path: &Path) -> bool {
-    fs::symlink_metadata(path)
-        .is_ok_and(|m| m.file_type().is_symlink())
+    fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
 }
 
 /// Read the target of a symlink.

@@ -13,7 +13,6 @@ mod ui;
 use std::process::ExitCode;
 
 use clap::Parser;
-
 use cli::{Cli, Command, VaultAction};
 
 fn main() -> ExitCode {

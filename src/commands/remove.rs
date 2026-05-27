@@ -1,8 +1,6 @@
 use std::fs;
 
-use crate::config::Config;
-use crate::error::Result;
-use crate::{store, ui};
+use crate::{config::Config, error::Result, store, ui};
 
 /// Remove entries from tracking.
 pub fn run(entries: &[String], purge: bool) -> Result<()> {
@@ -77,8 +75,8 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> crate::er
     std::fs::create_dir_all(dst)
         .map_err(|e| crate::error::Error::io(dst, "create directory", e))?;
 
-    for entry in std::fs::read_dir(src)
-        .map_err(|e| crate::error::Error::io(src, "read directory", e))?
+    for entry in
+        std::fs::read_dir(src).map_err(|e| crate::error::Error::io(src, "read directory", e))?
     {
         let entry = entry.map_err(|e| crate::error::Error::io(src, "read entry", e))?;
         let src_path = entry.path();

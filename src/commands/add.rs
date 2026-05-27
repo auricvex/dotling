@@ -1,17 +1,16 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::config::{Config, DeployMethod, Entry};
-use crate::error::{Error, Result};
-use crate::{path, store, ui};
+use crate::{
+    config::{Config, DeployMethod, Entry},
+    error::{Error, Result},
+    path, store, ui,
+};
 
 /// Add files or directories to dotling tracking.
-pub fn run(
-    paths: &[PathBuf],
-    encrypt: bool,
-    copy: bool,
-    os: Option<&str>,
-) -> Result<()> {
+pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Result<()> {
     let repo_root = store::require_repo_root()?;
     let config_path = store::config_path(&repo_root);
     let mut config = Config::load(&config_path)?;
@@ -29,14 +28,7 @@ pub fn run(
         }
 
         if resolved.is_dir() {
-            match add_directory(
-                &resolved,
-                &repo_root,
-                &mut config,
-                encrypt,
-                copy,
-                os,
-            ) {
+            match add_directory(&resolved, &repo_root, &mut config, encrypt, copy, os) {
                 Ok(n) => added += n,
                 Err(e) => {
                     ui::error(&format!("{e}"));
@@ -85,30 +77,22 @@ fn add_file(
     if encrypt {
         // Encrypt and store
         let password = ui::password("Vault password");
-        let content =
-            fs::read(file_path).map_err(|e| Error::io(file_path, "read file", e))?;
+        let content = fs::read(file_path).map_err(|e| Error::io(file_path, "read file", e))?;
         let encrypted = crate::crypto::encrypt(&content, &password)?;
 
         if let Some(parent) = repo_dest.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| Error::io(parent, "create directory", e))?;
+            fs::create_dir_all(parent).map_err(|e| Error::io(parent, "create directory", e))?;
         }
         crate::fs::atomic_write(&repo_dest, &encrypted)?;
     } else {
         if let Some(parent) = repo_dest.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| Error::io(parent, "create directory", e))?;
+            fs::create_dir_all(parent).map_err(|e| Error::io(parent, "create directory", e))?;
         }
-        fs::copy(file_path, &repo_dest)
-            .map_err(|e| Error::io(file_path, "copy to repo", e))?;
+        fs::copy(file_path, &repo_dest).map_err(|e| Error::io(file_path, "copy to repo", e))?;
     }
 
     // Add to config
-    let method = if copy {
-        Some(DeployMethod::Copy)
-    } else {
-        None
-    };
+    let method = if copy { Some(DeployMethod::Copy) } else { None };
 
     let entry = Entry {
         source: source_str.clone(),
@@ -129,8 +113,8 @@ fn add_file(
     if encrypt || copy {
         if encrypt {
             // For encrypted files, decrypt and write
-            let encrypted = fs::read(&repo_dest)
-                .map_err(|e| Error::io(&repo_dest, "read encrypted", e))?;
+            let encrypted =
+                fs::read(&repo_dest).map_err(|e| Error::io(&repo_dest, "read encrypted", e))?;
             let password = ui::password("Vault password (confirm)");
             let plaintext = crate::crypto::decrypt(&encrypted, &password)?;
             crate::fs::atomic_write(&expanded_target, &plaintext)?;
@@ -178,18 +162,13 @@ fn add_directory(
 
     // Copy directory to repo
     if let Some(parent) = repo_dest.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| Error::io(parent, "create directory", e))?;
+        fs::create_dir_all(parent).map_err(|e| Error::io(parent, "create directory", e))?;
     }
 
     copy_dir_recursive(dir_path, &repo_dest)?;
 
     // Add single entry
-    let method = if copy {
-        Some(DeployMethod::Copy)
-    } else {
-        None
-    };
+    let method = if copy { Some(DeployMethod::Copy) } else { None };
 
     let entry = Entry {
         source: source_str.clone(),

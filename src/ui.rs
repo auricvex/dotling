@@ -170,8 +170,6 @@ pub fn confirm(question: &str) -> bool {
     matches!(input.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
-
-
 /// Prompt for a password (input hidden on Unix).
 pub fn password(question: &str) -> String {
     print!("  {} {question}: ", paint(YELLOW, "🔑"));
@@ -253,14 +251,8 @@ pub fn print_diff(source_label: &str, target_label: &str, source: &str, target: 
     let source_lines: Vec<&str> = source.lines().collect();
     let target_lines: Vec<&str> = target.lines().collect();
 
-    println!(
-        "{} {source_label}",
-        paint(RED, "---")
-    );
-    println!(
-        "{} {target_label}",
-        paint(GREEN, "+++")
-    );
+    println!("{} {source_label}", paint(RED, "---"));
+    println!("{} {target_label}", paint(GREEN, "+++"));
 
     // Simple line-by-line diff (no LCS — fast and good enough for config files)
     let max = source_lines.len().max(target_lines.len());

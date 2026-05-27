@@ -1,7 +1,4 @@
-
-use crate::crypto;
-use crate::error::Result;
-use crate::ui;
+use crate::{crypto, error::Result, ui};
 
 /// Handle vault subcommands.
 pub fn run_init() -> Result<()> {
@@ -15,16 +12,12 @@ pub fn run_init() -> Result<()> {
     let password = ui::password("Choose a vault password");
 
     if password.is_empty() {
-        return Err(crate::error::Error::User(
-            "password cannot be empty".into(),
-        ));
+        return Err(crate::error::Error::User("password cannot be empty".into()));
     }
 
     let confirm = ui::password("Confirm password");
     if password != confirm {
-        return Err(crate::error::Error::User(
-            "passwords do not match".into(),
-        ));
+        return Err(crate::error::Error::User("passwords do not match".into()));
     }
 
     crypto::vault::init_vault(&password)?;
@@ -71,8 +64,7 @@ pub fn run_export(path: &std::path::Path) -> Result<()> {
 }
 
 pub fn run_import(path: &std::path::Path) -> Result<()> {
-    if crypto::vault::vault_exists()
-        && !ui::confirm("vault already exists — overwrite?") {
+    if crypto::vault::vault_exists() && !ui::confirm("vault already exists — overwrite?") {
         ui::info("import cancelled");
         return Ok(());
     }
@@ -96,16 +88,12 @@ pub fn run_change_password() -> Result<()> {
     let new_password = ui::password("New password");
 
     if new_password.is_empty() {
-        return Err(crate::error::Error::User(
-            "password cannot be empty".into(),
-        ));
+        return Err(crate::error::Error::User("password cannot be empty".into()));
     }
 
     let confirm = ui::password("Confirm new password");
     if new_password != confirm {
-        return Err(crate::error::Error::User(
-            "passwords do not match".into(),
-        ));
+        return Err(crate::error::Error::User("passwords do not match".into()));
     }
 
     crypto::vault::change_password(&old_password, &new_password)?;

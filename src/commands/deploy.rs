@@ -1,7 +1,4 @@
-use crate::config::Config;
-use crate::error::Result;
-use crate::platform;
-use crate::{store, ui};
+use crate::{config::Config, error::Result, platform, store, ui};
 
 /// Deploy all tracked entries.
 pub fn run(dry_run: bool, force: bool) -> Result<()> {
@@ -56,7 +53,9 @@ pub fn run(dry_run: bool, force: bool) -> Result<()> {
 
         let result = if entry.encrypted {
             // Prompt for password once
-            let password = if let Some(p) = &password_cache { p.clone() } else {
+            let password = if let Some(p) = &password_cache {
+                p.clone()
+            } else {
                 let p = ui::password("Vault password");
                 password_cache = Some(p.clone());
                 p

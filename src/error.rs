@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-use std::{fmt, io};
+use std::{fmt, io, path::PathBuf};
 
 /// Unified result type for dotling operations.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -24,10 +23,7 @@ pub enum Error {
     /// A cryptographic operation failed.
     Crypto(String),
     /// A deployment operation failed.
-    Deploy {
-        entry: String,
-        message: String,
-    },
+    Deploy { entry: String, message: String },
     /// A vault operation failed.
     Vault(String),
     /// A user-facing error with a clear message (no internal detail needed).

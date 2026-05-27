@@ -1,8 +1,9 @@
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
-use crate::config::{DeployMethod, Entry};
-use crate::error::{Error, Result};
+use crate::{
+    config::{DeployMethod, Entry},
+    error::{Error, Result},
+};
 
 /// The observed state of a deployed entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,8 +19,6 @@ pub enum EntryState {
     /// An unmanaged file exists at the target path.
     Conflict,
 }
-
-
 
 /// Check the deployment state of an entry.
 pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod) -> EntryState {
@@ -140,11 +139,7 @@ pub fn deploy_entry(
 ///
 /// Reads the encrypted source from the repo, decrypts it using the provided
 /// password, and writes the plaintext to the target.
-pub fn deploy_encrypted(
-    entry: &Entry,
-    repo_root: &Path,
-    password: &str,
-) -> Result<()> {
+pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Result<()> {
     let target = crate::path::expand_tilde(std::path::Path::new(&entry.target))?;
     let source = repo_root.join(format!("{}.enc", entry.source));
 

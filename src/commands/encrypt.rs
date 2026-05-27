@@ -1,8 +1,10 @@
 use std::fs;
 
-use crate::config::Config;
-use crate::error::{Error, Result};
-use crate::{store, ui};
+use crate::{
+    config::Config,
+    error::{Error, Result},
+    store, ui,
+};
 
 /// Encrypt tracked entries.
 pub fn run_encrypt(paths: &[String]) -> Result<()> {
@@ -33,8 +35,8 @@ pub fn run_encrypt(paths: &[String]) -> Result<()> {
                 }
 
                 // Read plaintext, encrypt, write .enc, remove original
-                let content = fs::read(&source_path)
-                    .map_err(|e| Error::io(&source_path, "read", e))?;
+                let content =
+                    fs::read(&source_path).map_err(|e| Error::io(&source_path, "read", e))?;
 
                 let encrypted = crate::crypto::encrypt(&content, &password)?;
                 let enc_path = repo_root.join(format!("{}.enc", entry.source));
@@ -90,8 +92,8 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
                 }
 
                 // Read encrypted, decrypt, write plaintext, remove .enc
-                let encrypted = fs::read(&enc_path)
-                    .map_err(|e| Error::io(&enc_path, "read encrypted", e))?;
+                let encrypted =
+                    fs::read(&enc_path).map_err(|e| Error::io(&enc_path, "read encrypted", e))?;
 
                 let plaintext = crate::crypto::decrypt(&encrypted, &password)?;
                 let source_path = repo_root.join(&entry.source);

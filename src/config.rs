@@ -1,6 +1,7 @@
-use std::fmt;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt, fs,
+    path::{Path, PathBuf},
+};
 
 use crate::error::{Error, Result};
 
@@ -101,8 +102,6 @@ impl Config {
         crate::fs::atomic_write(&self.path, content.as_bytes())
     }
 
-
-
     /// Add an entry. Returns an error if the source already exists.
     pub fn add_entry(&mut self, entry: Entry) -> Result<()> {
         if self.entries.iter().any(|e| e.source == entry.source) {
@@ -197,7 +196,14 @@ fn parse_config(input: &str, path: &Path) -> Result<Config> {
 
         // Key-value pair
         if let Some((key, value)) = parse_kv(line) {
-            handle_kv(key, &value, current_section.as_deref(), &mut settings, &mut current_entry, line_num)?;
+            handle_kv(
+                key,
+                &value,
+                current_section.as_deref(),
+                &mut settings,
+                &mut current_entry,
+                line_num,
+            )?;
         }
     }
 
@@ -357,7 +363,10 @@ fn unescape_string(s: &str) -> String {
 fn serialize_config(config: &Config) -> String {
     use std::fmt::Write;
     let mut out = String::new();
-    let _ = writeln!(out, "# dotling.toml — managed by dotling, safe to hand-edit\n");
+    let _ = writeln!(
+        out,
+        "# dotling.toml — managed by dotling, safe to hand-edit\n"
+    );
 
     // [settings]
     if config.settings.method != DeployMethod::Symlink {
