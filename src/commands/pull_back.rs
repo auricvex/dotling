@@ -50,6 +50,25 @@ pub fn run(printer: &Printer, file: &str) -> Result<()> {
 
             Ok(())
         }
+        LinkMethod::Encrypted => {
+            let dest_path = repo::src_to_dest_path(&entry.dest)?;
+            let src_path = repo_root.join(&entry.src);
+
+            if !dest_path.exists() {
+                return Err(DotlingError::PathNotFound(dest_path));
+            }
+
+            printer.arrow("encrypt pull", &dest_path, &src_path);
+            let plaintext = fs::read(&dest_path).map_err(io_err(&dest_path))?;
+            let ciphertext = crate::crypto::encrypt(&plaintext, &config.encryption.recipients)?;
+            fs::write(&src_path, ciphertext).map_err(io_err(&src_path))?;
+
+            git.stage(&src_path)?;
+            printer.ok("staged", &src_path);
+            printer.hint("Use `dotling push` to commit and push.");
+
+            Ok(())
+        }
     }
 }
 

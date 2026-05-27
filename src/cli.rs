@@ -47,6 +47,11 @@ pub enum Command {
         #[arg(long)]
         copy: bool,
 
+        /// Encrypt the file using age before storing it in the repo.
+        /// Overrides --copy since encrypted files must be copied.
+        #[arg(long)]
+        encrypt: bool,
+
         /// Skip the automatic git commit after linking.
         #[arg(long)]
         no_commit: bool,
@@ -114,4 +119,11 @@ pub enum Command {
 
     /// Audit repository health and report issues.
     Doctor,
+
+    /// Generate a new age x25519 keypair for encryption.
+    Keygen {
+        /// Save the private key to the default identity file path instead of printing it.
+        #[arg(long)]
+        save: bool,
+    },
 }
