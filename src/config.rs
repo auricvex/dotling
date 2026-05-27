@@ -52,6 +52,8 @@ pub struct Entry {
     pub directory: bool,
     /// OS restriction (e.g., `"linux"`, `"macos"`). `None` means all.
     pub os: Option<String>,
+    /// File permissions as an octal u32 (e.g. 0o600).
+    pub permissions: Option<u32>,
 }
 
 /// Repo-level settings.
@@ -296,6 +298,15 @@ fn handle_kv(
                 "encrypted" => builder.encrypted = parse_bool(value),
                 "directory" => builder.directory = parse_bool(value),
                 "os" => builder.os = Some(value.to_string()),
+                "permissions" => {
+                    builder.permissions = u32::from_str_radix(value, 8).ok();
+                    if builder.permissions.is_none() {
+                        return Err(Error::Config {
+                            message: format!("invalid permissions `{value}`"),
+                            line: Some(line_num),
+                        });
+                    }
+                }
                 _ => {
                     return Err(Error::Config {
                         message: format!("unknown entry field `{key}`"),
@@ -317,6 +328,7 @@ struct EntryBuilder {
     encrypted: bool,
     directory: bool,
     os: Option<String>,
+    permissions: Option<u32>,
 }
 
 impl EntryBuilder {
@@ -349,6 +361,7 @@ impl EntryBuilder {
             encrypted: self.encrypted,
             directory: self.directory,
             os: self.os,
+            permissions: self.permissions,
         })
     }
 }
@@ -434,6 +447,9 @@ fn serialize_config(config: &Config) -> String {
         if let Some(ref os) = entry.os {
             let _ = writeln!(out, "os = \"{os}\"");
         }
+        if let Some(perms) = entry.permissions {
+            let _ = writeln!(out, "permissions = \"{perms:04o}\"");
+        }
         let _ = writeln!(out);
     }
 
@@ -511,6 +527,7 @@ os = "macos"
                     encrypted: false,
                     directory: false,
                     os: None,
+                    permissions: None,
                 },
                 Entry {
                     source: "config/nvim".into(),
@@ -519,6 +536,7 @@ os = "macos"
                     encrypted: true,
                     directory: true,
                     os: Some("linux".into()),
+                    permissions: Some(0o600),
                 },
             ],
             path: PathBuf::from("test.toml"),
@@ -531,6 +549,7 @@ os = "macos"
         assert_eq!(parsed.entries[0].source, "shell/zshrc");
         assert!(parsed.entries[1].encrypted);
         assert!(parsed.entries[1].directory);
+        assert_eq!(parsed.entries[1].permissions, Some(0o600));
     }
 
     #[test]
@@ -544,6 +563,7 @@ os = "macos"
                 encrypted: false,
                 directory: false,
                 os: None,
+                permissions: None,
             })
             .unwrap();
 
@@ -555,6 +575,7 @@ os = "macos"
                 encrypted: false,
                 directory: false,
                 os: None,
+                permissions: None,
             })
             .unwrap_err();
 
@@ -572,6 +593,7 @@ os = "macos"
                 encrypted: false,
                 directory: false,
                 os: None,
+                permissions: None,
             })
             .unwrap();
 
@@ -583,6 +605,7 @@ os = "macos"
                 encrypted: false,
                 directory: false,
                 os: None,
+                permissions: None,
             })
             .unwrap_err();
 
@@ -600,6 +623,7 @@ os = "macos"
                 encrypted: false,
                 directory: false,
                 os: None,
+                permissions: None,
             })
             .unwrap();
 
@@ -619,6 +643,7 @@ os = "macos"
                 encrypted: false,
                 directory: false,
                 os: None,
+                permissions: None,
             })
             .unwrap();
 

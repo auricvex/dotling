@@ -132,6 +132,10 @@ pub fn deploy_entry(
         }
     }
 
+    if let Some(perms) = entry.permissions {
+        crate::fs::set_permissions(&target, perms)?;
+    }
+
     Ok(())
 }
 
@@ -157,12 +161,16 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
     crate::fs::atomic_write(&target, &plaintext)?;
 
     // Set restrictive permissions on decrypted files (Unix)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        fs::set_permissions(&target, perms)
-            .map_err(|e| Error::io(&target, "set permissions", e))?;
+    if let Some(perms) = entry.permissions {
+        crate::fs::set_permissions(&target, perms)?;
+    } else {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            fs::set_permissions(&target, perms)
+                .map_err(|e| Error::io(&target, "set permissions", e))?;
+        }
     }
 
     Ok(())

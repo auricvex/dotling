@@ -164,6 +164,35 @@ pub fn cleanup_empty_parents(path: &Path, stop_at: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Set file permissions (Unix only, no-op on other OSs)
+#[cfg(unix)]
+pub fn set_permissions(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let perms = fs::Permissions::from_mode(mode);
+    fs::set_permissions(path, perms).map_err(|e| Error::io(path, "set permissions", e))?;
+    Ok(())
+}
+
+/// Set file permissions (Unix only, no-op on other OSs)
+#[cfg(not(unix))]
+pub fn set_permissions(_path: &Path, _mode: u32) -> Result<()> {
+    Ok(())
+}
+
+/// Get file permissions (Unix only, returns None on other OSs)
+#[cfg(unix)]
+pub fn get_permissions(path: &Path) -> Result<Option<u32>> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = fs::metadata(path).map_err(|e| Error::io(path, "read metadata", e))?;
+    Ok(Some(meta.permissions().mode() & 0o777))
+}
+
+/// Get file permissions (Unix only, returns None on other OSs)
+#[cfg(not(unix))]
+pub fn get_permissions(_path: &Path) -> Result<Option<u32>> {
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
