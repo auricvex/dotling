@@ -1,13 +1,8 @@
-/// Command implementations for dotling.
-pub mod apply;
-pub mod diff;
+pub mod add;
+pub mod deploy;
 pub mod doctor;
+pub mod encrypt;
 pub mod init;
-pub mod keygen;
-pub mod link;
-pub mod list;
-pub mod pull_back;
-pub mod push;
+pub mod remove;
 pub mod status;
-pub mod sync;
-pub mod unlink;
+pub mod vault;

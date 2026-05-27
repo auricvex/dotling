@@ -1,208 +1,168 @@
-/// Audit repository health and report issues.
-///
-/// Checks: repo discovery, config parsing, git remote configuration,
-/// each entry's status (source exists + deployment status), and orphan
-/// files in the repo not referenced by config.
-use std::collections::HashSet;
+use crate::config::Config;
+use crate::error::Result;
+use crate::{store, ui};
 
-use walkdir::WalkDir;
+/// Audit repository health.
+#[allow(clippy::too_many_lines)]
+pub fn run() -> Result<()> {
+    ui::header("Doctor");
 
-use crate::{
-    config::{CONFIG_FILE, Config},
-    git::Git,
-    linker::{EntryStatus, Linker},
-    platform::Platform,
-    printer::Printer,
-    repo,
-};
+    let mut ok = 0usize;
+    let mut warnings = 0usize;
+    let mut errors = 0usize;
 
-/// Mutable counters for doctor diagnostics.
-struct Counters {
-    /// Number of errors found.
-    errors: usize,
-    /// Number of warnings found.
-    warnings: usize,
-}
-
-/// Runs the `doctor` command.
-pub fn run(printer: &Printer) {
-    let mut c = Counters {
-        errors: 0,
-        warnings: 0,
-    };
-
-    // 1. Check repo discovery
-    printer.group_header("Repository");
-    let repo_root = match repo::get_repo_root() {
-        Ok(root) => {
-            printer.ok("found", &root);
-            root
-        }
-        Err(e) => {
-            printer.error_msg(&format!("repo: {e}"));
-            c.errors += 1;
-            print_doctor_summary(printer, &c);
-            return;
-        }
-    };
-
-    // 2. Check config
-    printer.group_header("Configuration");
-    let config = match Config::load(&repo_root) {
-        Ok(config) => {
-            let config_path = repo_root.join(CONFIG_FILE);
-            printer.ok("parsed", &config_path);
-            config
-        }
-        Err(e) => {
-            printer.error_msg(&format!("config: {e}"));
-            c.errors += 1;
-            print_doctor_summary(printer, &c);
-            return;
-        }
-    };
-
-    check_git(printer, &repo_root, &mut c);
-    check_entries(printer, &repo_root, &config, &mut c);
-    check_orphans(printer, &repo_root, &config, &mut c);
-    print_doctor_summary(printer, &c);
-}
-
-/// Checks git remote configuration.
-fn check_git(printer: &Printer, repo_root: &std::path::Path, c: &mut Counters) {
-    printer.group_header("Git");
-    let git = Git::new(repo_root.to_path_buf());
-    match git.has_remote() {
-        Ok(true) => {
-            printer.ok("remote", repo_root);
-        }
-        Ok(false) => {
-            printer.warn("no remote", "no git remote configured");
-            printer.hint("Add one with: git remote add origin <url>");
-            c.warnings += 1;
-        }
-        Err(e) => {
-            printer.error_msg(&format!("git: {e}"));
-            c.errors += 1;
-        }
-    }
-}
-
-/// Checks each tracked entry's status.
-fn check_entries(
-    printer: &Printer,
-    repo_root: &std::path::Path,
-    config: &Config,
-    c: &mut Counters,
-) {
-    printer.group_header("Entries");
-    let linker = Linker::new(repo_root.to_path_buf());
-
-    for entry in &config.entries {
-        // Skip entries for other OSes with an informational note
-        if !entry.os.is_active() {
-            let label = format!("skip [{}]", entry.os);
-            printer.skipped(&label, std::path::Path::new(&entry.dest));
-            continue;
-        }
-
-        let os_suffix = if entry.os == Platform::All {
-            String::new()
+    // 1. Check repo root
+    if let Some(repo_root) = store::get_repo_root()? {
+        if repo_root.exists() {
+            ui::success(&format!("repo: {}", repo_root.display()));
+            ok += 1;
         } else {
-            format!(" [{}]", entry.os)
-        };
+            ui::error(&format!(
+                "repo directory missing: {}",
+                repo_root.display()
+            ));
+            // errors += 1 — early return so we don't need to track it
+            ui::summary(0, 0, 1);
+            return Ok(());
+        }
 
-        let dest_path = match repo::src_to_dest_path(&entry.dest) {
-            Ok(p) => p,
-            Err(e) => {
-                printer.error_msg(&format!("{}: {e}", entry.dest));
-                c.errors += 1;
-                continue;
+        // 2. Check config file
+        let config_path = store::config_path(&repo_root);
+        if config_path.exists() {
+            match Config::load(&config_path) {
+                Ok(config) => {
+                    ui::success(&format!(
+                        "config: {} entries",
+                        config.entries.len()
+                    ));
+                    ok += 1;
+
+                    // 3. Check each entry
+                    for entry in &config.entries {
+                        let state = crate::deploy::check_state(
+                            entry,
+                            &repo_root,
+                            config.settings.method,
+                        );
+
+                        let source_path = if entry.encrypted {
+                            repo_root.join(format!("{}.enc", entry.source))
+                        } else {
+                            repo_root.join(&entry.source)
+                        };
+
+                        // Check source exists in repo
+                        if !source_path.exists() {
+                            ui::error(&format!(
+                                "missing source: {}",
+                                entry.source
+                            ));
+                            errors += 1;
+                            continue;
+                        }
+
+                        match state {
+                            crate::deploy::EntryState::Deployed => {
+                                ok += 1;
+                            }
+                            crate::deploy::EntryState::Modified => {
+                                ui::warning(&format!(
+                                    "modified: {} → {}",
+                                    entry.source, entry.target
+                                ));
+                                warnings += 1;
+                            }
+                            crate::deploy::EntryState::Missing => {
+                                ui::error(&format!(
+                                    "not deployed: {} → {}",
+                                    entry.source, entry.target
+                                ));
+                                errors += 1;
+                            }
+                            crate::deploy::EntryState::Broken => {
+                                ui::error(&format!(
+                                    "broken link: {} → {}",
+                                    entry.source, entry.target
+                                ));
+                                errors += 1;
+                            }
+                            crate::deploy::EntryState::Conflict => {
+                                ui::warning(&format!(
+                                    "conflict: {} → {}",
+                                    entry.source, entry.target
+                                ));
+                                warnings += 1;
+                            }
+                        }
+                    }
+
+                    // 4. Check for orphan files in repo
+                    check_orphans(&repo_root, &config);
+                }
+                Err(e) => {
+                    ui::error(&format!("config error: {e}"));
+                    errors += 1;
+                }
             }
-        };
+        } else {
+            ui::error("config file (dotling.toml) not found");
+            errors += 1;
+        }
 
-        let src_path = repo_root.join(&entry.src);
-        if !src_path.exists() {
-            printer.error_line("no src", &src_path);
-            c.errors += 1;
+        // 5. Check git
+        if repo_root.join(".git").exists() {
+            ui::success("git: initialized");
+            ok += 1;
+        } else {
+            ui::warning("git: not initialized");
+            warnings += 1;
+        }
+
+        // 6. Check vault
+        if crate::crypto::vault::vault_exists() {
+            ui::success("vault: initialized");
+            ok += 1;
+        } else {
+            ui::info("vault: not initialized (optional)");
+        }
+    } else {
+        ui::error("no repo found — run `dotling init <path>`");
+        errors += 1;
+    }
+
+    ui::summary(ok, warnings, errors);
+
+    Ok(())
+}
+
+/// Check for files in the repo that aren't tracked in the config.
+fn check_orphans(repo_root: &std::path::Path, config: &Config) {
+    let Ok(files) = crate::fs::walk_dir(repo_root, false) else {
+        return;
+    };
+
+    for file in files {
+        let Ok(rel) = file.strip_prefix(repo_root) else {
+            continue;
+        };
+        let rel_str = rel.to_string_lossy();
+
+        // Skip known files
+        if rel_str == "dotling.toml" || rel_str.starts_with(".git") {
             continue;
         }
 
-        match linker.check_entry(entry) {
-            Ok(EntryStatus::Ok) => {
-                let label = format!("ok{os_suffix}");
-                printer.ok(&label, &dest_path);
-            }
-            Ok(EntryStatus::Modified) => {
-                printer.skipped("modified", &dest_path);
-                c.warnings += 1;
-            }
-            Ok(EntryStatus::BrokenSymlink) => {
-                printer.error_line("broken", &dest_path);
-                c.errors += 1;
-            }
-            Ok(EntryStatus::Missing) => {
-                printer.missing(&dest_path);
-                c.errors += 1;
-            }
-            Ok(EntryStatus::Conflict) => {
-                printer.error_line("conflict", &dest_path);
-                c.warnings += 1;
-            }
-            Err(e) => {
-                printer.error_msg(&format!("{}: {e}", dest_path.display()));
-                c.errors += 1;
-            }
+        // Check if any entry tracks this file
+        let is_tracked = config.entries.iter().any(|e| {
+            let source = &e.source;
+            let enc_source = format!("{source}.enc");
+            rel_str == *source
+                || rel_str == enc_source
+                || rel_str.starts_with(&format!("{source}/"))
+        });
+
+        if !is_tracked {
+            ui::warning(&format!("orphan: {rel_str}"));
         }
-    }
-}
-
-/// Checks for orphan files not referenced by config.
-fn check_orphans(
-    printer: &Printer,
-    repo_root: &std::path::Path,
-    config: &Config,
-    c: &mut Counters,
-) {
-    printer.group_header("Orphans");
-    let tracked_srcs: HashSet<String> = config.entries.iter().map(|e| e.src.clone()).collect();
-
-    let mut orphan_count = 0usize;
-    for entry in WalkDir::new(repo_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-        .filter(|e| e.file_type().is_file())
-    {
-        let path = entry.path();
-        if let Ok(rel) = path.strip_prefix(repo_root) {
-            let rel_str = rel.to_string_lossy().to_string();
-            if rel_str.starts_with(".git") || rel_str == CONFIG_FILE || rel_str.starts_with('.') {
-                continue;
-            }
-            if !tracked_srcs.contains(&rel_str) {
-                printer.skipped("orphan", path);
-                orphan_count += 1;
-                c.warnings += 1;
-            }
-        }
-    }
-
-    if orphan_count == 0 {
-        printer.ok("none", std::path::Path::new("no orphan files"));
-    }
-}
-
-/// Prints the doctor summary.
-fn print_doctor_summary(printer: &Printer, c: &Counters) {
-    printer.annotation(&format!(
-        "\n{} error(s), {} warning(s)",
-        c.errors, c.warnings
-    ));
-    if c.errors == 0 && c.warnings == 0 {
-        printer.success("Everything looks good!");
-    } else if c.errors == 0 {
-        printer.warn_msg("Some warnings found — review above.");
-    } else {
-        printer.error_msg("Issues found — review above.");
     }
 }

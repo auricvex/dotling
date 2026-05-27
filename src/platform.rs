@@ -1,54 +1,53 @@
-/// OS platform detection for multi-OS dotfile support.
-///
-/// Each [`LinkEntry`](crate::config::LinkEntry) carries a [`Platform`] tag.
-/// Entries tagged [`All`](Platform::All) deploy everywhere; other variants
-/// restrict the entry to a single operating system.
-use clap::ValueEnum;
-use serde::{Deserialize, Serialize};
-
-/// Target operating system for a config entry.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
-#[serde(rename_all = "lowercase")]
+/// Detected operating system platform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
-    /// Deploys on every platform (the default).
-    #[default]
-    All,
-    /// Linux only.
     Linux,
-    /// macOS only.
-    #[serde(alias = "darwin")]
     Macos,
-    /// Windows only.
     Windows,
 }
 
 impl Platform {
-    /// Returns the platform of the current machine.
+    /// Returns the platform for the current OS.
     pub fn current() -> Self {
-        match std::env::consts::OS {
-            "linux" => Self::Linux,
-            "macos" => Self::Macos,
-            "windows" => Self::Windows,
-            _ => Self::All,
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(target_os = "windows") {
+            Self::Windows
+        } else {
+            Self::Linux
         }
     }
 
-    /// Returns `true` if this platform matches the current machine.
-    ///
-    /// [`All`](Self::All) matches every machine.
-    pub fn is_active(self) -> bool {
-        self == Self::All || self == Self::current()
+    /// Parse a platform string (case-insensitive).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "linux" => Some(Self::Linux),
+            "macos" | "darwin" => Some(Self::Macos),
+            "windows" | "win" => Some(Self::Windows),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Linux => "linux",
+            Self::Macos => "macos",
+            Self::Windows => "windows",
+        }
     }
 }
 
 impl std::fmt::Display for Platform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::All => write!(f, "all"),
-            Self::Linux => write!(f, "linux"),
-            Self::Macos => write!(f, "macos"),
-            Self::Windows => write!(f, "windows"),
-        }
+        f.write_str(self.as_str())
+    }
+}
+
+/// Returns `true` if an entry tagged with `os` should be deployed on this machine.
+pub fn should_deploy(os: Option<&str>) -> bool {
+    match os {
+        None | Some("all") => true,
+        Some(s) => Platform::parse(s).is_some_and(|p| p == Platform::current()),
     }
 }
 
@@ -57,40 +56,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn current_returns_known_variant() {
+    fn current_is_valid() {
         let p = Platform::current();
-        assert!(matches!(
-            p,
-            Platform::Linux | Platform::Macos | Platform::Windows
-        ));
+        assert!(!p.as_str().is_empty());
     }
 
     #[test]
-    fn all_is_always_active() {
-        assert!(Platform::All.is_active());
-    }
-
-    #[test]
-    fn current_is_active() {
-        assert!(Platform::current().is_active());
-    }
-
-    #[test]
-    fn serde_round_trip() {
-        #[derive(Debug, Serialize, Deserialize, PartialEq)]
-        struct Wrapper {
-            os: Platform,
+    fn parse_roundtrip() {
+        for p in [Platform::Linux, Platform::Macos, Platform::Windows] {
+            assert_eq!(Platform::parse(p.as_str()), Some(p));
         }
-        for p in [
-            Platform::All,
-            Platform::Linux,
-            Platform::Macos,
-            Platform::Windows,
-        ] {
-            let w = Wrapper { os: p };
-            let s = toml::to_string(&w).unwrap();
-            let back: Wrapper = toml::from_str(&s).unwrap();
-            assert_eq!(w, back);
-        }
+    }
+
+    #[test]
+    fn all_always_deploys() {
+        assert!(should_deploy(None));
+        assert!(should_deploy(Some("all")));
     }
 }
