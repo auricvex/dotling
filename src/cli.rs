@@ -1,134 +1,126 @@
-/// CLI argument parsing with clap.
-///
-/// Defines the top-level [`Cli`] struct with a global `--verbose` flag
-/// and all subcommands as a [`Command`] enum using clap's derive API.
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::platform::Platform;
-
-/// dotling — a dotfiles management CLI.
-///
-/// Track files under ~, store them in a git repo, and deploy them
-/// via symlinks or copies across machines.
-#[derive(Debug, Parser)]
-#[command(name = "dotling", version, about)]
+#[derive(Parser)]
+#[command(
+    name = "dotling",
+    version,
+    about = "A dotfiles management CLI — track, link, and sync your config files across machines",
+    long_about = None,
+    arg_required_else_help = true,
+)]
 pub struct Cli {
-    /// Enable verbose output (show hints and additional details).
+    /// Show verbose output with hints.
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// The subcommand to run.
     #[command(subcommand)]
     pub command: Command,
 }
 
-/// Available dotling subcommands.
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 pub enum Command {
-    /// Initialize a new dotling repository or clone an existing one.
+    /// Initialize a new dotfiles repo or adopt an existing one.
     Init {
-        /// Local path to create, or a git URL to clone.
-        path_or_url: String,
+        /// Path to create the repo at, or a git URL to clone.
+        #[arg(default_value = "~/dotfiles")]
+        path: String,
     },
 
-    /// Link a file or directory into the dotling repository.
-    Link {
-        /// Path to the file or directory to track.
-        path: PathBuf,
+    /// Add files or directories to tracking.
+    Add {
+        /// Paths to add (files or directories).
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
 
-        /// Treat the directory as a single symlink unit instead of walking
-        /// its files.
+        /// Encrypt the file(s) using the vault password.
         #[arg(long)]
-        as_dir: bool,
+        encrypt: bool,
 
         /// Deploy as a copy instead of a symlink.
         #[arg(long)]
         copy: bool,
 
-        /// Encrypt the file using age before storing it in the repo.
-        /// Overrides --copy since encrypted files must be copied.
+        /// Restrict to a specific OS (linux, macos, windows).
         #[arg(long)]
-        encrypt: bool,
-
-        /// Skip the automatic git commit after linking.
-        #[arg(long)]
-        no_commit: bool,
-
-        /// Target OS for this entry (all, linux, macos, windows).
-        #[arg(long, default_value = "all")]
-        os: Platform,
+        os: Option<String>,
     },
 
-    /// Unlink a file from the dotling repository.
-    Unlink {
-        /// Path to the tracked file to unlink.
-        path: PathBuf,
+    /// Remove entries from tracking.
+    Remove {
+        /// Source paths or target paths of entries to remove.
+        #[arg(required = true)]
+        entries: Vec<String>,
 
-        /// Also delete the source file from the repo.
+        /// Also delete the source files from the repo.
         #[arg(long)]
         purge: bool,
     },
 
-    /// Sync dotfiles with the remote repository.
-    Sync {
-        /// Push local changes before pulling.
+    /// Deploy all tracked entries.
+    Deploy {
+        /// Show what would change without modifying anything.
         #[arg(long)]
-        push: bool,
+        dry_run: bool,
 
-        /// Force-overwrite modified copies during re-apply.
+        /// Overwrite conflicting files.
         #[arg(long)]
         force: bool,
+    },
 
-        /// Show what would change without making modifications.
+    /// Show status of all tracked entries.
+    Status {
+        /// Show inline diffs for modified entries.
         #[arg(long)]
-        dry_run: bool,
+        diff: bool,
     },
 
-    /// Stage, commit, and push all changes to the remote.
-    Push {
-        /// Commit message (defaults to "dotling: update dotfiles").
-        message: Option<String>,
+    /// Encrypt or decrypt tracked entries.
+    Encrypt {
+        /// Paths to encrypt.
+        #[arg(required = true)]
+        paths: Vec<String>,
     },
 
-    /// Show the deployment status of all tracked entries.
-    Status,
-
-    /// Show a diff between the repo source and the deployed file.
-    Diff {
-        /// Specific file to diff (diffs all modified entries if omitted).
-        file: Option<PathBuf>,
+    /// Decrypt encrypted entries back to plaintext in the repo.
+    Decrypt {
+        /// Paths to decrypt.
+        #[arg(required = true)]
+        paths: Vec<String>,
     },
 
-    /// Re-deploy missing and broken entries.
-    Apply {
-        /// Show what would change without making modifications.
-        #[arg(long)]
-        dry_run: bool,
+    /// Manage the encryption vault.
+    Vault {
+        #[command(subcommand)]
+        action: VaultAction,
     },
-
-    /// Pull back a deployed copy into the repo.
-    PullBack {
-        /// File to pull back (filename or full destination path).
-        #[arg(required_unless_present = "all")]
-        file: Option<String>,
-
-        /// Pull back all modified entries.
-        #[arg(long)]
-        all: bool,
-    },
-
-    /// List all tracked entries, grouped by category.
-    List,
 
     /// Audit repository health and report issues.
     Doctor,
+}
 
-    /// Generate a new age x25519 keypair for encryption.
-    Keygen {
-        /// Save the private key to the default identity file path instead of printing it.
-        #[arg(long)]
-        save: bool,
+#[derive(Subcommand)]
+pub enum VaultAction {
+    /// Initialize a new vault with a password.
+    Init,
+
+    /// Show vault status and public info.
+    Show,
+
+    /// Export vault as a portable encrypted bundle.
+    Export {
+        /// Path to write the vault bundle.
+        path: PathBuf,
     },
+
+    /// Import a vault bundle.
+    Import {
+        /// Path to the vault bundle to import.
+        path: PathBuf,
+    },
+
+    /// Change the vault password.
+    #[command(name = "change-password")]
+    ChangePassword,
 }

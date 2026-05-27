@@ -1,95 +1,87 @@
-/// Crate-wide error types for dotling.
-///
-/// All errors propagate through the [`DotlingError`] enum and are surfaced
-/// to the user via the [`crate::printer::Printer`] module. No panics in
-/// user-facing code.
 use std::path::PathBuf;
+use std::{fmt, io};
 
-/// Central error type for all dotling operations.
-#[derive(Debug, thiserror::Error)]
-pub enum DotlingError {
-    /// The dotling repository has not been initialized yet.
-    #[error("dotling repo not found — run `dotling init <path>` first")]
-    RepoNotFound,
+/// Unified result type for dotling operations.
+pub type Result<T> = std::result::Result<T, Error>;
 
-    /// A repository already exists at the given path.
-    #[error("already initialized at {0}")]
-    AlreadyInitialized(PathBuf),
-
-    /// The specified path does not exist on disk.
-    #[error("path not found: {0}")]
-    PathNotFound(PathBuf),
-
-    /// The path is outside the user's home directory.
-    #[error("path is outside home directory: {0}")]
-    PathOutsideHome(PathBuf),
-
-    /// The file is already tracked by dotling.
-    #[error("already tracked: {0}")]
-    AlreadyTracked(PathBuf),
-
-    /// The file is not currently tracked by dotling.
-    #[error("not tracked: {0}")]
-    NotTracked(PathBuf),
-
-    /// An unmanaged file exists at the link target destination.
-    #[error("destination conflict — unmanaged file exists at {0}")]
-    DestinationConflict(PathBuf),
-
-    /// A git command exited with a non-zero status.
-    #[error("git: {0}")]
-    Git(String),
-
-    /// An I/O error occurred, with the associated path for context.
-    #[error("{path}: {source}")]
+/// All errors that dotling can produce.
+///
+/// Each variant carries enough context to produce a helpful, user-facing
+/// message without the caller needing to guess what went wrong.
+#[derive(Debug)]
+pub enum Error {
+    /// An I/O error with path and operation context.
     Io {
-        /// The path involved in the I/O operation.
         path: PathBuf,
-        /// The underlying I/O error.
-        source: std::io::Error,
+        operation: &'static str,
+        source: io::Error,
     },
-
-    /// The config file could not be parsed.
-    #[error("failed to parse config: {0}")]
-    ConfigParse(String),
-
-    /// The config file could not be written.
-    #[error("failed to write config: {0}")]
-    #[allow(dead_code)]
-    ConfigWrite(String),
-
-    /// The platform is not supported.
-    #[allow(dead_code)]
-    #[error("Platform unsupported: {0}")]
-    UnsupportedPlatform(String),
-
-    /// A cryptographic error occurred.
-    #[error("Crypto error: {0}")]
+    /// A configuration file parsing or validation error.
+    Config {
+        message: String,
+        line: Option<usize>,
+    },
+    /// A cryptographic operation failed.
     Crypto(String),
-
-    /// No git remote is configured on the repository.
-    #[error("no git remote configured — add one with `git remote add origin <url>`")]
-    NoRemote,
-
-    /// The path is already a symlink (cannot link a symlink).
-    #[error("already a symlink: {0}")]
-    AlreadySymlink(PathBuf),
+    /// A deployment operation failed.
+    Deploy {
+        entry: String,
+        message: String,
+    },
+    /// A vault operation failed.
+    Vault(String),
+    /// A user-facing error with a clear message (no internal detail needed).
+    User(String),
 }
 
-/// Returns a closure that converts [`std::io::Error`] into
-/// [`DotlingError::Io`] with the given path attached.
-///
-/// # Usage
-///
-/// ```ignore
-/// std::fs::read(&path).map_err(io_err(&path))?;
-/// ```
-pub fn io_err(path: &std::path::Path) -> impl FnOnce(std::io::Error) -> DotlingError + '_ {
-    move |source| DotlingError::Io {
-        path: path.to_path_buf(),
-        source,
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io {
+                path,
+                operation,
+                source,
+            } => {
+                write!(f, "{operation} `{}`: {source}", path.display())
+            }
+            Self::Config {
+                message,
+                line: Some(n),
+            } => {
+                write!(f, "config error (line {n}): {message}")
+            }
+            Self::Config {
+                message,
+                line: None,
+            } => {
+                write!(f, "config error: {message}")
+            }
+            Self::Crypto(msg) => write!(f, "crypto error: {msg}"),
+            Self::Deploy { entry, message } => {
+                write!(f, "deploy `{entry}`: {message}")
+            }
+            Self::Vault(msg) => write!(f, "vault error: {msg}"),
+            Self::User(msg) => write!(f, "{msg}"),
+        }
     }
 }
 
-/// Crate-wide result alias using [`DotlingError`].
-pub type Result<T> = std::result::Result<T, DotlingError>;
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl Error {
+    /// Convenience constructor for I/O errors with context.
+    pub fn io(path: impl Into<PathBuf>, operation: &'static str, source: io::Error) -> Self {
+        Self::Io {
+            path: path.into(),
+            operation,
+            source,
+        }
+    }
+}

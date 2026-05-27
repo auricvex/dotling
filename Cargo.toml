@@ -1,6 +1,6 @@
 [package]
 name = "dotling"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 description = "A dotfiles management CLI — track, link, and sync your config files across machines"
@@ -10,7 +10,7 @@ homepage = "https://github.com/auricvex/dotling"
 documentation = "https://github.com/auricvex/dotling#readme"
 readme = "README.md"
 authors = ["Ade M Ramdani <auricvex@gmail.com>"]
-keywords = ["dotfiles", "symlink", "cli", "config", "sync"]
+keywords = ["dotfiles", "symlink", "cli", "config", "encryption"]
 categories = ["command-line-utilities", "filesystem"]
 exclude = [
   ".github/",
@@ -27,16 +27,10 @@ exclude = [
 
 [dependencies]
 clap = { version = "4.6.1", features = ["color", "derive"] }
-dirs = "6.0.0"
-owo-colors = "4.3.0"
-pathdiff = "0.2.3"
-serde = { version = "1.0.228", features = ["derive"] }
-thiserror = "2.0.18"
-toml = "1.1.2"
-walkdir = "2.5.0"
-age = "0.11.3"
-secrecy = "0.10.3"
-dialoguer = "0.12.0"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+rand = "0.9"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -44,7 +38,6 @@ tempfile = "3.27.0"
 [lints.clippy]
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
-# Allow common pedantic false positives for CLI code
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
 pedantic = { level = "warn", priority = -1 }
