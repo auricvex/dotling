@@ -6,6 +6,7 @@
 mod cli;
 mod commands;
 mod config;
+mod crypto;
 mod error;
 mod git;
 mod linker;
@@ -35,9 +36,10 @@ fn main() -> std::process::ExitCode {
             path,
             as_dir,
             copy,
+            encrypt,
             no_commit,
             os,
-        } => commands::link::run(&printer, &path, as_dir, copy, no_commit, os),
+        } => commands::link::run(&printer, &path, as_dir, copy, encrypt, no_commit, os),
         cli::Command::Unlink { path, purge } => commands::unlink::run(&printer, &path, purge),
         cli::Command::Sync {
             push,
@@ -50,6 +52,7 @@ fn main() -> std::process::ExitCode {
         cli::Command::Apply { dry_run } => commands::apply::run(&printer, dry_run),
         cli::Command::PullBack { file } => commands::pull_back::run(&printer, &file),
         cli::Command::List => commands::list::run(&printer),
+        cli::Command::Keygen { save } => commands::keygen::run(&printer, save),
     };
 
     if let Err(e) = result {

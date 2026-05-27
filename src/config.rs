@@ -28,6 +28,8 @@ pub enum LinkMethod {
     Symlink,
     /// Deploy as a file copy.
     Copy,
+    /// Deploy as an age-encrypted copy.
+    Encrypted,
 }
 
 impl std::fmt::Display for LinkMethod {
@@ -35,6 +37,7 @@ impl std::fmt::Display for LinkMethod {
         match self {
             Self::Symlink => write!(f, "symlink"),
             Self::Copy => write!(f, "copy"),
+            Self::Encrypted => write!(f, "encrypted"),
         }
     }
 }
@@ -54,9 +57,20 @@ pub struct LinkEntry {
     pub os: Platform,
 }
 
+/// Global encryption settings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EncryptionConfig {
+    /// List of age public key strings (recipients).
+    #[serde(default)]
+    pub recipients: Vec<String>,
+}
+
 /// Wrapper for serialization with `[[links]]` table syntax.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct ConfigFile {
+    /// Global encryption settings.
+    #[serde(default)]
+    encryption: EncryptionConfig,
     /// All tracked link entries.
     #[serde(default)]
     links: Vec<LinkEntry>,
@@ -67,6 +81,8 @@ struct ConfigFile {
 pub struct Config {
     /// Path to the config file on disk.
     path: PathBuf,
+    /// Global encryption settings.
+    pub encryption: EncryptionConfig,
     /// All tracked entries, in insertion order.
     pub entries: Vec<LinkEntry>,
 }
@@ -80,6 +96,7 @@ impl Config {
         if !path.exists() {
             return Ok(Self {
                 path,
+                encryption: EncryptionConfig::default(),
                 entries: Vec::new(),
             });
         }
@@ -88,6 +105,7 @@ impl Config {
             toml::from_str(&content).map_err(|e| DotlingError::ConfigParse(e.to_string()))?;
         Ok(Self {
             path,
+            encryption: file.encryption,
             entries: file.links,
         })
     }
@@ -98,6 +116,16 @@ impl Config {
     /// entries for readability.
     pub fn save(&self) -> Result<()> {
         let mut output = String::new();
+
+        if !self.encryption.recipients.is_empty() {
+            output.push_str("[encryption]\n");
+            output.push_str("recipients = [\n");
+            for recipient in &self.encryption.recipients {
+                let _ = writeln!(output, "    {recipient:?},");
+            }
+            output.push_str("]\n\n");
+        }
+
         for (i, entry) in self.entries.iter().enumerate() {
             if i > 0 {
                 output.push('\n');
@@ -166,6 +194,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = Config {
             path: dir.path().join(CONFIG_FILE),
+            encryption: EncryptionConfig {
+                recipients: vec!["age1test".to_string()],
+            },
             entries: vec![
                 LinkEntry {
                     src: "config/nvim/init.lua".to_string(),
@@ -184,6 +215,8 @@ mod tests {
         config.save().unwrap();
 
         let loaded = Config::load(dir.path()).unwrap();
+        assert_eq!(loaded.encryption.recipients.len(), 1);
+        assert_eq!(loaded.encryption.recipients[0], "age1test");
         assert_eq!(loaded.entries.len(), 2);
         assert_eq!(loaded.entries[0].src, "config/nvim/init.lua");
         assert_eq!(loaded.entries[0].dest, "~/.config/nvim/init.lua");
@@ -198,6 +231,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut config = Config {
             path: dir.path().join(CONFIG_FILE),
+            encryption: EncryptionConfig::default(),
             entries: Vec::new(),
         };
         config
@@ -223,6 +257,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut config = Config {
             path: dir.path().join(CONFIG_FILE),
+            encryption: EncryptionConfig::default(),
             entries: Vec::new(),
         };
         let result = config.remove_entry("~/.nonexistent");

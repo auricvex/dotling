@@ -18,11 +18,13 @@ use crate::{
 };
 
 /// Runs the `link` command.
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub fn run(
     printer: &Printer,
     path: &Path,
     as_dir: bool,
     copy: bool,
+    encrypt: bool,
     no_commit: bool,
     os: Platform,
 ) -> Result<()> {
@@ -42,7 +44,9 @@ pub fn run(
         return Err(DotlingError::AlreadySymlink(abs_path));
     }
 
-    let method = if copy {
+    let method = if encrypt {
+        LinkMethod::Encrypted
+    } else if copy {
         LinkMethod::Copy
     } else {
         LinkMethod::Symlink
@@ -85,7 +89,7 @@ pub fn run(
 }
 
 /// Links a single file or directory-as-unit.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn link_single(
     printer: &Printer,
     repo_root: &Path,
@@ -110,9 +114,20 @@ fn link_single(
         fs::create_dir_all(parent).map_err(io_err(parent))?;
     }
 
-    // Move file into repo
-    printer.arrow("move", abs_path, &src_abs);
-    fs::rename(abs_path, &src_abs).map_err(io_err(abs_path))?;
+    // Move or encrypt file into repo
+    if method == LinkMethod::Encrypted {
+        if abs_path.is_dir() {
+            return Err(DotlingError::Crypto("Cannot encrypt directories as a unit".to_string()));
+        }
+        let plaintext = fs::read(abs_path).map_err(io_err(abs_path))?;
+        let ciphertext = crate::crypto::encrypt(&plaintext, &config.encryption.recipients)?;
+        fs::write(&src_abs, ciphertext).map_err(io_err(&src_abs))?;
+        fs::remove_file(abs_path).map_err(io_err(abs_path))?;
+        printer.arrow("encrypt", abs_path, &src_abs);
+    } else {
+        printer.arrow("move", abs_path, &src_abs);
+        fs::rename(abs_path, &src_abs).map_err(io_err(abs_path))?;
+    }
 
     // Add config entry
     let entry = LinkEntry {

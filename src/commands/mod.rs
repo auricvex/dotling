@@ -3,6 +3,7 @@ pub mod apply;
 pub mod diff;
 pub mod doctor;
 pub mod init;
+pub mod keygen;
 pub mod link;
 pub mod list;
 pub mod pull_back;
