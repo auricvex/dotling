@@ -58,6 +58,15 @@ pub enum DotlingError {
     #[allow(dead_code)]
     ConfigWrite(String),
 
+    /// The platform is not supported.
+    #[allow(dead_code)]
+    #[error("Platform unsupported: {0}")]
+    UnsupportedPlatform(String),
+
+    /// A cryptographic error occurred.
+    #[error("Crypto error: {0}")]
+    Crypto(String),
+
     /// No git remote is configured on the repository.
     #[error("no git remote configured — add one with `git remote add origin <url>`")]
     NoRemote,

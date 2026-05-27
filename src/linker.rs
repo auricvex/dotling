@@ -82,6 +82,7 @@ impl Linker {
         match entry.method {
             LinkMethod::Symlink => deploy_symlink(&src, &dest),
             LinkMethod::Copy => deploy_copy(&src, &dest, force),
+            LinkMethod::Encrypted => deploy_encrypted(&src, &dest, force),
         }
     }
 
@@ -105,9 +106,9 @@ impl Linker {
                     fs::copy(&src, &dest).map_err(io_err(&dest))?;
                 }
             }
-            LinkMethod::Copy => {
-                // For copies, the dest is already the real file — nothing to
-                // do.
+            LinkMethod::Copy | LinkMethod::Encrypted => {
+                // For copies and encrypted files, the dest is already the real file
+                // — nothing to do for undeployment.
             }
         }
         Ok(())
@@ -121,6 +122,7 @@ impl Linker {
         match entry.method {
             LinkMethod::Symlink => check_symlink(&src, &dest),
             LinkMethod::Copy => check_copy(&src, &dest),
+            LinkMethod::Encrypted => check_encrypted(&src, &dest),
         }
     }
 }
@@ -191,6 +193,49 @@ fn check_copy(src: &Path, dest: &Path) -> Result<EntryStatus> {
     let src_content = fs::read(src).map_err(io_err(src))?;
     let dest_content = fs::read(dest).map_err(io_err(dest))?;
     if src_content == dest_content {
+        Ok(EntryStatus::Ok)
+    } else {
+        Ok(EntryStatus::Modified)
+    }
+}
+
+/// Deploys an encrypted copy from src to dest.
+fn deploy_encrypted(src: &Path, dest: &Path, force: bool) -> Result<DeployResult> {
+    let identity = crate::crypto::get_default_identity()?;
+    let ciphertext = fs::read(src).map_err(io_err(src))?;
+    let plaintext = crate::crypto::decrypt(&ciphertext, &identity)?;
+
+    if dest.exists() && !dest.is_symlink() {
+        let dest_content = fs::read(dest).map_err(io_err(dest))?;
+        if plaintext == dest_content {
+            return Ok(DeployResult::AlreadyOk);
+        }
+        if !force {
+            return Ok(DeployResult::Skipped);
+        }
+    } else if dest.is_symlink() {
+        return Err(DotlingError::DestinationConflict(dest.to_path_buf()));
+    }
+    fs::write(dest, plaintext).map_err(io_err(dest))?;
+    Ok(DeployResult::Created)
+}
+
+/// Checks an encrypted copy entry's status.
+fn check_encrypted(src: &Path, dest: &Path) -> Result<EntryStatus> {
+    if !dest.exists() {
+        return Ok(EntryStatus::Missing);
+    }
+    if dest.is_symlink() {
+        return Ok(EntryStatus::Conflict);
+    }
+    let identity = crate::crypto::get_default_identity()?;
+    let ciphertext = fs::read(src).map_err(io_err(src))?;
+    let Ok(plaintext) = crate::crypto::decrypt(&ciphertext, &identity) else {
+        return Ok(EntryStatus::Modified);
+    };
+    
+    let dest_content = fs::read(dest).map_err(io_err(dest))?;
+    if plaintext == dest_content {
         Ok(EntryStatus::Ok)
     } else {
         Ok(EntryStatus::Modified)
