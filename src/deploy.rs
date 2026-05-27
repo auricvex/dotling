@@ -151,7 +151,8 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
     }
 
     let encrypted = fs::read(&source).map_err(|e| Error::io(&source, "read encrypted file", e))?;
-    let plaintext = crate::crypto::decrypt(&encrypted, password)?;
+    let master_key = crate::crypto::vault::unlock_vault(password)?;
+    let plaintext = crate::crypto::decrypt_with_key(&encrypted, &master_key)?;
 
     crate::fs::atomic_write(&target, &plaintext)?;
 

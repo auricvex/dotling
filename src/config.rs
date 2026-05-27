@@ -135,14 +135,56 @@ impl Config {
 
     /// Find an entry by source path or target path.
     pub fn find_entry(&self, query: &str) -> Option<&Entry> {
-        self.entries
-            .iter()
-            .find(|e| e.source == query || e.target == query)
+        let resolved_query = crate::path::resolve(Path::new(query)).ok();
+        let repo_root = self.path.parent();
+
+        self.entries.iter().find(|e| {
+            if e.source == query || e.target == query {
+                return true;
+            }
+            if let Some(rq) = &resolved_query {
+                if let Ok(resolved_target) = crate::path::resolve(Path::new(&e.target)) {
+                    if rq == &resolved_target {
+                        return true;
+                    }
+                }
+                if let Some(root) = repo_root {
+                    if let Ok(resolved_source) = crate::path::resolve(&root.join(&e.source)) {
+                        if rq == &resolved_source {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        })
     }
 
-    /// Find an entry mutably by source path.
-    pub fn find_entry_mut(&mut self, source: &str) -> Option<&mut Entry> {
-        self.entries.iter_mut().find(|e| e.source == source)
+    /// Find an entry mutably by source path or target path.
+    pub fn find_entry_mut(&mut self, query: &str) -> Option<&mut Entry> {
+        let resolved_query = crate::path::resolve(Path::new(query)).ok();
+        let repo_root = self.path.parent();
+
+        self.entries.iter_mut().find(|e| {
+            if e.source == query || e.target == query {
+                return true;
+            }
+            if let Some(rq) = &resolved_query {
+                if let Ok(resolved_target) = crate::path::resolve(Path::new(&e.target)) {
+                    if rq == &resolved_target {
+                        return true;
+                    }
+                }
+                if let Some(root) = repo_root {
+                    if let Ok(resolved_source) = crate::path::resolve(&root.join(&e.source)) {
+                        if rq == &resolved_source {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        })
     }
 }
 

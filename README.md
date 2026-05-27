@@ -14,7 +14,7 @@
 
 ---
 
-**dotling** v0.3.0 has been rebuilt from scratch. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, and multi-OS support — so you can set up a new machine in seconds.
+**dotling** v0.3.1 has been rebuilt from scratch. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, and multi-OS support — so you can set up a new machine in seconds.
 
 ## Features
 
@@ -166,7 +166,7 @@ When deploying, dotling automatically skips entries that don't match the current
 
 ### Encryption Vault
 
-dotling v0.3.0 includes a built-in portable encryption Vault protected by Argon2id and ChaCha20-Poly1305. This lets you safely commit API keys, `.env` files, or ssh configs to your public dotfiles repo.
+dotling v0.3.1 includes a built-in portable encryption Vault protected by Argon2id and ChaCha20-Poly1305. This lets you safely commit API keys, `.env` files, or ssh configs to your public dotfiles repo.
 
 1. **Initialize your Vault:**
    ```sh

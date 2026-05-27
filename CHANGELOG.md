@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased / 0.3.0]
+## [0.3.1]
+- **fix**: refactor Vault architecture to correctly utilize the master secret via Key Encapsulation (`DOTLING-ENC-V2`)
+- **fix**: resolve absolute paths and home directory relative paths during config lookups
+- **fix**: prevent attempting to encrypt or decrypt entire directories
+- **chore**: bump project version to 0.3.1
+
+## [0.3.0]
 - **refactor**: simplify test assertions and use tempfile for robust test directory management
 - **refactor**: apply consistent rustfmt code style and formatting across all modules
 - **chore**: ignore result
