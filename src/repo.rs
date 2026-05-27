@@ -69,9 +69,9 @@ pub fn expand_path(path: &Path) -> Result<PathBuf> {
 ///
 /// 1. Expands `~` to the home directory.
 /// 2. Prepends `std::env::current_dir()` if the path is still relative.
-/// 3. Normalizes away `.` and `..` components **without** calling
-///    `fs::canonicalize`, so the result never embeds machine-specific
-///    prefixes (e.g. `/Users/<username>`) that would break portability.
+/// 3. Normalizes away `.` and `..` components **without** calling `fs::canonicalize`, so the result
+///    never embeds machine-specific prefixes (e.g. `/Users/<username>`) that would break
+///    portability.
 pub fn resolve_path(path: &Path) -> Result<PathBuf> {
     let expanded = expand_path(path)?;
     let absolute = if expanded.is_relative() {

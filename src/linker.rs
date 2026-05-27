@@ -200,13 +200,14 @@ fn check_copy(src: &Path, dest: &Path) -> Result<EntryStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::Platform;
 
     fn make_entry(src: &str, dest: &str, method: LinkMethod) -> LinkEntry {
         LinkEntry {
             src: src.to_string(),
             dest: dest.to_string(),
             method,
-            os: Default::default(),
+            os: Platform::default(),
         }
     }
 

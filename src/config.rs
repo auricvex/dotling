@@ -11,8 +11,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{DotlingError, Result, io_err};
-use crate::platform::Platform;
+use crate::{
+    error::{DotlingError, Result, io_err},
+    platform::Platform,
+};
 
 /// Name of the config file at the repo root.
 pub const CONFIG_FILE: &str = ".dotling.toml";

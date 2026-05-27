@@ -53,9 +53,25 @@ pub fn run(
     let linker = Linker::new(repo_root.clone());
 
     if abs_path.is_dir() && !as_dir {
-        link_directory(printer, &repo_root, &abs_path, method, os, &mut config, &linker);
+        link_directory(
+            printer,
+            &repo_root,
+            &abs_path,
+            method,
+            os,
+            &mut config,
+            &linker,
+        );
     } else {
-        link_single(printer, &repo_root, &abs_path, method, os, &mut config, &linker)?;
+        link_single(
+            printer,
+            &repo_root,
+            &abs_path,
+            method,
+            os,
+            &mut config,
+            &linker,
+        )?;
     }
 
     config.save()?;

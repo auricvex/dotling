@@ -59,7 +59,10 @@ mod tests {
     #[test]
     fn current_returns_known_variant() {
         let p = Platform::current();
-        assert!(matches!(p, Platform::Linux | Platform::Macos | Platform::Windows));
+        assert!(matches!(
+            p,
+            Platform::Linux | Platform::Macos | Platform::Windows
+        ));
     }
 
     #[test]
@@ -78,7 +81,12 @@ mod tests {
         struct Wrapper {
             os: Platform,
         }
-        for p in [Platform::All, Platform::Linux, Platform::Macos, Platform::Windows] {
+        for p in [
+            Platform::All,
+            Platform::Linux,
+            Platform::Macos,
+            Platform::Windows,
+        ] {
             let w = Wrapper { os: p };
             let s = toml::to_string(&w).unwrap();
             let back: Wrapper = toml::from_str(&s).unwrap();
