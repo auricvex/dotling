@@ -21,6 +21,7 @@
 - **Symlink & copy deployment** — choose per file, switch anytime
 - **Automatic path mapping** — `~/.config/nvim` → `config/nvim`, `~/.zshrc` → `shell/zshrc`
 - **Multi-OS support** — tag entries as `linux`, `macos`, or `windows`; skip irrelevant files automatically
+- **Secure Encryption** — natively encrypt sensitive files (API keys, .env) using `age`
 - **Git-integrated** — init, commit, push, pull, and sync in one workflow
 - **Health checks** — `dotling doctor` audits broken links, orphaned entries, and repo issues
 - **Conflict-safe** — refuses to overwrite unmanaged files without explicit confirmation
@@ -87,6 +88,7 @@ dotling init git@github.com:you/dotfiles.git
 | `dotling init <path\|url>` | Initialize a new repo or clone an existing one |
 | `dotling link <path>` | Move a file into the repo and deploy a symlink back |
 | `dotling unlink <path>` | Undeploy and remove from tracking |
+| `dotling keygen` | Generate a new age encryption keypair |
 | `dotling sync` | Pull changes from remote and re-deploy entries |
 | `dotling push [message]` | Stage, commit, and push all changes |
 | `dotling status` | Show deployment status of all tracked entries |
@@ -103,8 +105,10 @@ dotling init git@github.com:you/dotfiles.git
 | `-v, --verbose` | all | Show hints and additional details |
 | `--as-dir` | link | Treat directory as a single symlink unit |
 | `--copy` | link | Deploy as a copy instead of a symlink |
+| `--encrypt` | link | Deploy as an age-encrypted file |
 | `--no-commit` | link | Skip automatic git commit |
 | `--os <platform>` | link | Target OS: `all`, `linux`, `macos`, `windows` |
+| `--save` | keygen | Save generated secret key to config directory |
 | `--purge` | unlink | Also delete the source file from the repo |
 | `--push` | sync | Push local changes before pulling |
 | `--force` | sync | Overwrite modified copies during re-apply |
@@ -161,6 +165,30 @@ dotling link ~/.bashrc --os linux
 ```
 
 When deploying, dotling automatically skips entries that don't match the current OS. Entries tagged `all` (the default) deploy everywhere.
+
+### Encryption
+
+dotling includes built-in, secure encryption using [age](https://github.com/FiloSottile/age). This lets you safely commit API keys, `.env` files, or ssh configs to your public dotfiles repo.
+
+1. **Generate a keypair:**
+   ```sh
+   dotling keygen --save
+   ```
+   This generates a new x25519 keypair, saving your secret key in `~/.dotling/identities/default.txt`, and printing your public key.
+
+2. **Add the public key to `.dotling.toml`:**
+   ```toml
+   [encryption]
+   recipients = [
+       "age1yur9...",
+   ]
+   ```
+
+3. **Link a file with encryption:**
+   ```sh
+   dotling link ~/.ssh/config --encrypt
+   ```
+   dotling will read your local file, encrypt it with your configured public key, store the ciphertext in your git repo, and deploy the decrypted file locally.
 
 ## Contributing
 
