@@ -74,22 +74,24 @@ fn add_file(
     };
 
     // Move the file into the repo
-    if encrypt {
-        // Encrypt and store
+    let master_key = if encrypt {
         let password = ui::password("Vault password");
+        let mk = crate::crypto::vault::unlock_vault(&password)?;
         let content = fs::read(file_path).map_err(|e| Error::io(file_path, "read file", e))?;
-        let encrypted = crate::crypto::encrypt(&content, &password)?;
+        let encrypted = crate::crypto::encrypt_with_key(&content, &mk)?;
 
         if let Some(parent) = repo_dest.parent() {
             fs::create_dir_all(parent).map_err(|e| Error::io(parent, "create directory", e))?;
         }
         crate::fs::atomic_write(&repo_dest, &encrypted)?;
+        Some(mk)
     } else {
         if let Some(parent) = repo_dest.parent() {
             fs::create_dir_all(parent).map_err(|e| Error::io(parent, "create directory", e))?;
         }
         fs::copy(file_path, &repo_dest).map_err(|e| Error::io(file_path, "copy to repo", e))?;
-    }
+        None
+    };
 
     // Add to config
     let method = if copy { Some(DeployMethod::Copy) } else { None };
@@ -112,11 +114,11 @@ fn add_file(
 
     if encrypt || copy {
         if encrypt {
-            // For encrypted files, decrypt and write
+            // For encrypted files, decrypt and write using the same master key
+            let mk = master_key.unwrap();
             let encrypted =
                 fs::read(&repo_dest).map_err(|e| Error::io(&repo_dest, "read encrypted", e))?;
-            let password = ui::password("Vault password (confirm)");
-            let plaintext = crate::crypto::decrypt(&encrypted, &password)?;
+            let plaintext = crate::crypto::decrypt_with_key(&encrypted, &mk)?;
             crate::fs::atomic_write(&expanded_target, &plaintext)?;
 
             #[cfg(unix)]

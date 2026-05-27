@@ -13,6 +13,7 @@ pub fn run_encrypt(paths: &[String]) -> Result<()> {
     let mut config = Config::load(&config_path)?;
 
     let password = ui::password("Vault password");
+    let master_key = crate::crypto::vault::unlock_vault(&password)?;
     let mut encrypted_count = 0usize;
     let mut errors = 0usize;
 
@@ -24,6 +25,15 @@ pub fn run_encrypt(paths: &[String]) -> Result<()> {
             }
             Some(entry) => {
                 let source_path = repo_root.join(&entry.source);
+
+                if entry.directory {
+                    ui::error(&format!(
+                        "`{}` is a directory; cannot encrypt entire directories",
+                        entry.source
+                    ));
+                    errors += 1;
+                    continue;
+                }
 
                 if !source_path.exists() {
                     ui::error(&format!(
@@ -38,7 +48,7 @@ pub fn run_encrypt(paths: &[String]) -> Result<()> {
                 let content =
                     fs::read(&source_path).map_err(|e| Error::io(&source_path, "read", e))?;
 
-                let encrypted = crate::crypto::encrypt(&content, &password)?;
+                let encrypted = crate::crypto::encrypt_with_key(&content, &master_key)?;
                 let enc_path = repo_root.join(format!("{}.enc", entry.source));
                 crate::fs::atomic_write(&enc_path, &encrypted)?;
 
@@ -70,6 +80,7 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
     let mut config = Config::load(&config_path)?;
 
     let password = ui::password("Vault password");
+    let master_key = crate::crypto::vault::unlock_vault(&password)?;
     let mut decrypted_count = 0usize;
     let mut errors = 0usize;
 
@@ -80,6 +91,15 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
                 ui::warning(&format!("`{}` is not encrypted", entry.source));
             }
             Some(entry) => {
+                if entry.directory {
+                    ui::error(&format!(
+                        "`{}` is a directory; cannot decrypt entire directories",
+                        entry.source
+                    ));
+                    errors += 1;
+                    continue;
+                }
+
                 let enc_path = repo_root.join(format!("{}.enc", entry.source));
 
                 if !enc_path.exists() {
@@ -95,7 +115,7 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
                 let encrypted =
                     fs::read(&enc_path).map_err(|e| Error::io(&enc_path, "read encrypted", e))?;
 
-                let plaintext = crate::crypto::decrypt(&encrypted, &password)?;
+                let plaintext = crate::crypto::decrypt_with_key(&encrypted, &master_key)?;
                 let source_path = repo_root.join(&entry.source);
                 crate::fs::atomic_write(&source_path, &plaintext)?;
 

@@ -55,7 +55,7 @@ pub fn init_vault(password: &str) -> Result<()> {
 }
 
 /// Unlock the vault and return the decrypted secret material.
-pub fn unlock_vault(password: &str) -> Result<Vec<u8>> {
+pub fn unlock_vault(password: &str) -> Result<[u8; 32]> {
     let dir = vault_dir()?;
     let identity_path = dir.join("identity.enc");
 
@@ -68,7 +68,10 @@ pub fn unlock_vault(password: &str) -> Result<Vec<u8>> {
     let content = fs::read_to_string(&identity_path)
         .map_err(|e| Error::io(&identity_path, "read vault identity", e))?;
 
-    decrypt_identity(&content, password)
+    let decrypted = decrypt_identity(&content, password)?;
+    decrypted
+        .try_into()
+        .map_err(|_| Error::Vault("corrupted vault secret length".into()))
 }
 
 /// Export the vault directory to a bundle at `path`.
