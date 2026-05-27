@@ -58,7 +58,7 @@ pub fn run(printer: &Printer) -> Result<()> {
     printer.summary(ok_count, modified_count, missing_count);
 
     if modified_count > 0 {
-        printer.hint("Use `dotling pull-back <file>` to update the repo, or `dotling apply --force` to overwrite.");
+        printer.hint("Use `dotling push` to push modifications, `dotling pull-back --all` to update the repo locally, or `dotling apply --force` to overwrite.");
     }
     if missing_count > 0 {
         printer.hint("Use `dotling apply` to re-deploy missing entries.");

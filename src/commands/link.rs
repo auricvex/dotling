@@ -117,7 +117,9 @@ fn link_single(
     // Move or encrypt file into repo
     if method == LinkMethod::Encrypted {
         if abs_path.is_dir() {
-            return Err(DotlingError::Crypto("Cannot encrypt directories as a unit".to_string()));
+            return Err(DotlingError::Crypto(
+                "Cannot encrypt directories as a unit".to_string(),
+            ));
         }
         let plaintext = fs::read(abs_path).map_err(io_err(abs_path))?;
         let ciphertext = crate::crypto::encrypt(&plaintext, &config.encryption.recipients)?;

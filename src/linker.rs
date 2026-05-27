@@ -233,7 +233,7 @@ fn check_encrypted(src: &Path, dest: &Path) -> Result<EntryStatus> {
     let Ok(plaintext) = crate::crypto::decrypt(&ciphertext, &identity) else {
         return Ok(EntryStatus::Modified);
     };
-    
+
     let dest_content = fs::read(dest).map_err(io_err(dest))?;
     if plaintext == dest_content {
         Ok(EntryStatus::Ok)
