@@ -43,12 +43,7 @@ pub fn run(query: &str) -> Result<()> {
 // ── Encrypted edit ────────────────────────────────────────────────
 
 fn run_encrypted_edit(entry: &crate::config::Entry, repo_root: &Path, editor: &str) -> Result<()> {
-    // Locate the .enc file (or directory) in the repo.
-    let enc_path = if entry.directory {
-        repo_root.join(&entry.source)
-    } else {
-        repo_root.join(format!("{}.enc", entry.source))
-    };
+    let enc_path = repo_root.join(&entry.source);
 
     if !enc_path.exists() {
         return Err(Error::Deploy {
