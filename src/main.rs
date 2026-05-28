@@ -37,9 +37,13 @@ fn run(cli: Cli) -> error::Result<()> {
             os,
         } => commands::add::run(&paths, encrypt, copy, os.as_deref()),
 
-        Command::Remove { entries, purge } => commands::remove::run(&entries, purge),
+        Command::Remove { entries } => commands::remove::run(&entries),
 
-        Command::Deploy { dry_run, force } => commands::deploy::run(dry_run, force),
+        Command::Sync {
+            dry_run,
+            force,
+            prefer_actual,
+        } => commands::sync::run(dry_run, force, prefer_actual),
 
         Command::Status { diff } => commands::status::run(diff),
 

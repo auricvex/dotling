@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0]
+- **feat**: replace `deploy` command with bidirectional `sync` (repo → actual and actual → repo)
+- **feat**: implement recursive directory encryption and decryption in `encrypt`/`decrypt` commands
+- **fix**: make `remove` always purge the repo source file and restore the original — remove the `--purge` flag
+- **chore**: bump project version to 0.4.0
+
 ## [0.3.1]
 - **fix**: refactor Vault architecture to correctly utilize the master secret via Key Encapsulation (`DOTLING-ENC-V2`)
 - **fix**: resolve absolute paths and home directory relative paths during config lookups

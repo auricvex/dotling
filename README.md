@@ -19,9 +19,11 @@
 ## Features
 
 - **Symlink & copy deployment** — choose per file, switch anytime
+- **Bidirectional sync** — `dotling sync` pushes from repo → actual and pulls from actual → repo automatically
 - **Automatic path mapping** — `~/.config/nvim` → `config/nvim`, `~/.zshrc` → `shell/zshrc`
 - **Multi-OS support** — tag entries as `linux`, `macos`, or `windows`; skip irrelevant files automatically
 - **Secure Password Vault** — encrypt sensitive files (API keys, .env) using an Argon2id + ChaCha20-Poly1305 Vault
+- **Encrypted sync** — sync handles encrypted entries in both directions; modified plaintext is re-encrypted back into the repo automatically
 - **Portable Secrets** — export your vault to easily unlock secrets on a new machine
 - **Native Git integration** — dotling manages the symlinks, you manage the repo with native `git` commands
 - **Health checks** — `dotling doctor` audits broken links, orphaned entries, and repo issues
@@ -75,8 +77,8 @@ dotling init git@github.com:you/dotfiles.git
 dotling add ~/.zshrc
 dotling add ~/.config/nvim
 
-# Deploy the symlinks
-dotling deploy
+# Sync everything (repo → actual and actual → repo)
+dotling sync
 
 # Since dotling doesn't wrap git, you can commit and push directly!
 cd ~/dotfiles
@@ -91,8 +93,8 @@ git push
 |---|---|
 | `dotling init <path\|url>` | Initialize a new repo or clone an existing one |
 | `dotling add <paths>` | Move files into the repo and deploy a symlink back |
-| `dotling remove <entries>` | Undeploy and remove from tracking |
-| `dotling deploy` | Deploy all tracked entries (create symlinks or copies) |
+| `dotling remove <entries>` | Undeploy, restore the original file, and remove from tracking |
+| `dotling sync` | Bidirectional sync — push repo → actual and pull actual → repo |
 | `dotling status` | Show deployment status of all tracked entries |
 | `dotling encrypt <paths>` | Encrypt tracked entries using your Vault |
 | `dotling decrypt <paths>` | Decrypt encrypted entries back to plaintext |
@@ -107,18 +109,30 @@ git push
 | `add` | `--copy` | Deploy as a copy instead of a symlink |
 | `add` | `--encrypt` | Encrypt the file(s) using the vault password |
 | `add` | `--os <platform>` | Target OS: `all`, `linux`, `macos`, `windows` |
-| `remove` | `--purge` | Also delete the source files from the repo |
-| `deploy` | `--force` | Overwrite conflicting files |
-| `deploy` | `--dry-run` | Show what would change without modifying |
+| `sync` | `--dry-run` | Preview changes without modifying anything |
+| `sync` | `--force` | Overwrite conflicting files (repo wins) |
+| `sync` | `--prefer-actual` | When both sides conflict, prefer the actual file (pull direction) |
 | `status` | `--diff` | Show inline diffs for modified copy entries |
 
 ## How It Works
 
 dotling moves your config files into a central git repository and replaces them with symlinks (or copies). Each tracked file is recorded in a `dotling.toml` config at the repo root.
 
-**Symlinks** (default): the deployed file points to the repo — edits are instantly reflected in your repo.
+**Symlinks** (default): the deployed file points to the repo — edits are instantly reflected in your repo. `dotling sync` ensures the symlink is present and correct.
 
-**Copies** (`--copy`): the deployed file is a standalone copy. Useful for apps that don't support symlinks.
+**Copies** (`--copy`): the deployed file is a standalone copy. Useful for apps that don't support symlinks. `dotling sync` compares modification times and copies in whichever direction is newer.
+
+### Sync Direction
+
+`dotling sync` decides the direction per entry:
+
+| Entry type | Push (repo → actual) | Pull (actual → repo) |
+|---|---|---|
+| **Symlink** | Create/fix symlink | Never (symlink always reads repo) |
+| **Copy** | Source newer or target missing | Target newer |
+| **Encrypted** | `.enc` newer or target missing → decrypt | Target newer → re-encrypt into `.enc` |
+
+When both sides differ and timestamps are equal, dotling defaults to **repo wins** (push). Pass `--prefer-actual` to flip this.
 
 ### Path Mapping
 
@@ -180,14 +194,23 @@ dotling v0.3.1 includes a built-in portable encryption Vault protected by Argon2
    ```
    dotling will read your local file, encrypt it, store the ciphertext (`config.enc`) in your git repo, and deploy the decrypted file locally with secure permissions.
 
-3. **Migrating to a new machine:**
+3. **Sync encrypted entries:**
+   `dotling sync` handles encrypted entries in both directions. If you edit the deployed plaintext file, running `sync` will re-encrypt it back into the repo:
+   ```sh
+   # Edit your deployed file, then sync it back
+   vim ~/.ssh/config
+   dotling sync   # detects the file is newer → re-encrypts into ssh/config.enc
+   ```
+
+4. **Migrating to a new machine:**
    Export your vault bundle from your old machine:
    ```sh
    dotling vault export my-vault.bundle
    ```
-   Then import it on the new machine:
+   Then import it on the new machine and sync:
    ```sh
    dotling vault import my-vault.bundle
+   dotling sync
    ```
 
 ## Contributing

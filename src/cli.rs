@@ -52,14 +52,13 @@ pub enum Command {
         /// Source paths or target paths of entries to remove.
         #[arg(required = true)]
         entries: Vec<String>,
-
-        /// Also delete the source files from the repo.
-        #[arg(long)]
-        purge: bool,
     },
 
-    /// Deploy all tracked entries.
-    Deploy {
+    /// Synchronise tracked entries between the repo and the actual filesystem.
+    ///
+    /// Pushes (repo → actual) entries that are missing or outdated,
+    /// and pulls (actual → repo) copy-mode entries that were modified locally.
+    Sync {
         /// Show what would change without modifying anything.
         #[arg(long)]
         dry_run: bool,
@@ -67,6 +66,11 @@ pub enum Command {
         /// Overwrite conflicting files.
         #[arg(long)]
         force: bool,
+
+        /// When both sides differ and timestamps are equal, prefer the actual
+        /// file over the repo (pull direction). Default is to prefer the repo.
+        #[arg(long)]
+        prefer_actual: bool,
     },
 
     /// Show status of all tracked entries.
