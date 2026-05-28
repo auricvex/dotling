@@ -205,12 +205,10 @@ fn encrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
             let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
             let encrypted = crate::crypto::encrypt_with_key(&content, key)?;
 
-            let enc_path = path.with_extension(
-                match path.extension().and_then(|e| e.to_str()) {
-                    Some(ext) => format!("{ext}.enc"),
-                    None => "enc".to_string(),
-                },
-            );
+            let enc_path = path.with_extension(match path.extension().and_then(|e| e.to_str()) {
+                Some(ext) => format!("{ext}.enc"),
+                None => "enc".to_string(),
+            });
             crate::fs::atomic_write(&enc_path, &encrypted)?;
             fs::remove_file(&path).map_err(|e| Error::io(&path, "remove plaintext", e))?;
             count += 1;
