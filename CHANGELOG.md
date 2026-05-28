@@ -2,7 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0]
+
+- **feat**: Dotfile Templating (`dotling add --template`, `dotling vars`)
+  - Introduced opt-in templating for dotfiles using `.dtmpl`-suffixed source files stored in the repo. Template files are rendered on every `sync` — machine-specific values are substituted, and the rendered output is deployed.
+  - **Template syntax** — `{{ var.key }}` for user-defined variables, `{{ dotling.hostname }}` / `dotling.username` / `dotling.os` / `dotling.arch` / `dotling.home` / `dotling.repo` for built-ins, `{{ env.VAR }}` for environment variables.
+  - **Pipe filters** — `upper`, `lower`, `trim`, `quote`, `squote`, `default:fallback` (e.g. `{{ var.name | upper }}`).
+  - **Whitespace control** — `{{- expr -}}` strips surrounding whitespace from the rendered output.
+  - **Hard-error on unresolved variables** — `sync` and `add` both abort with a clear message and `dotling vars set` hints when a variable is missing.
+  - **Variable store** — machine-local variables live in `~/.dotling/vars.toml` (never committed); shared non-sensitive defaults live in `[vars]` in `dotling.toml` (committed). Local values take priority.
+  - **`dotling add <path> --template`** — validates syntax, copies the source into the repo as `<name>.dtmpl`, renders immediately, and deploys the rendered output. Combine with `--encrypt` to store the template ciphertext as `<name>.dtmpl.enc`.
+  - **`dotling vars`** subcommand with seven actions:
+    - `list` — show all resolved variables (built-ins, config defaults, local) with their source tags.
+    - `set <key> <value>` — save a machine-local variable.
+    - `get <key>` — print the resolved value and source of a single variable.
+    - `unset <key>` — remove a variable from the local store.
+    - `check` — validate all `.dtmpl` entries and report unresolved variables with fix hints.
+    - `import <path>` — bulk-import variables from a `.toml` `[vars]` section or a `.env` file.
+    - `export` — print local variables as TOML for migrating to a new machine.
+  - **Bootstrap prompt** — on first `sync` on a new machine, dotling detects missing variables across all template entries and interactively prompts for their values before syncing.
+  - **Fingerprint-aware sync** — template entries skip push/pull conflict logic entirely; the rendered content is hashed and only re-written when the output would actually change.
+  - **`dotling status`** — template entries display a distinct `📄` badge and fingerprint-based drift detection.
+  - **`dotling doctor`** — reports unresolved variables per template entry with `dotling vars set` hints, and warns if any `[vars]` default looks like a real value (email, long token, matches current username).
+  - **Security** — sensitive per-machine values go in `~/.dotling/vars.toml` (never committed); shared non-sensitive defaults go in `[vars]` in `dotling.toml`. Sensitive templates can be encrypted: the pipeline is `vault decrypt → render → deploy`.
+
 ## [0.5.0]
+
 - **feat**: Backup Subsystem (`dotling backup`)
   - Added a dedicated backup module to handle automated file and directory backups before overwriting local files.
   - Organises backups under `~/.dotling/backups/<unix-seconds>/<repo-relative-source-path>` for safe chronological tracking.

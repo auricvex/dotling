@@ -42,6 +42,11 @@ pub enum Command {
         #[arg(long)]
         copy: bool,
 
+        /// Track as a template (.dtmpl): rendered on each sync with
+        /// machine-local variables from `~/.dotling/vars.toml`.
+        #[arg(long)]
+        template: bool,
+
         /// Restrict to a specific OS (linux, macos, windows).
         #[arg(long)]
         os: Option<String>,
@@ -123,6 +128,15 @@ pub enum Command {
     /// Audit repository health and report issues.
     Doctor,
 
+    /// Manage machine-local template variables.
+    ///
+    /// Variables are stored in `~/.dotling/vars.toml` and are never
+    /// committed to git. Shared defaults live in `dotling.toml [vars]`.
+    Vars {
+        #[command(subcommand)]
+        action: VarsAction,
+    },
+
     /// Manage local file backups created by dotling before overwriting.
     Backup {
         #[command(subcommand)]
@@ -174,4 +188,42 @@ pub enum BackupAction {
         #[arg(long, value_name = "DAYS")]
         older_than: Option<u64>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum VarsAction {
+    /// Show all resolved variables (built-in, config defaults, and local).
+    List,
+
+    /// Set a machine-local variable in `~/.dotling/vars.toml`.
+    Set {
+        /// Variable key.
+        key: String,
+        /// Variable value.
+        value: String,
+    },
+
+    /// Print the resolved value of a single variable.
+    Get {
+        /// Variable key.
+        key: String,
+    },
+
+    /// Remove a variable from the local store.
+    Unset {
+        /// Variable key.
+        key: String,
+    },
+
+    /// Validate all template entries — find unresolved variables.
+    Check,
+
+    /// Bulk-import variables from a TOML or .env file.
+    Import {
+        /// Path to a TOML file with a `[vars]` section, or a `.env` file.
+        path: std::path::PathBuf,
+    },
+
+    /// Print local variables as TOML (useful for migrating to a new machine).
+    Export,
 }

@@ -12,6 +12,7 @@ const STATE_FILE: &str = "state.toml";
 const FINGERPRINTS_FILE: &str = "fingerprints.toml";
 const BACKUPS_DIR: &str = "backups";
 const SNAPSHOTS_DIR: &str = "snapshots";
+const VARS_FILE: &str = "vars.toml";
 
 /// Global state directory: `~/.dotling/`
 pub fn state_dir() -> Result<PathBuf> {
@@ -26,6 +27,11 @@ fn state_path() -> Result<PathBuf> {
 /// Path to the fingerprint store: `~/.dotling/fingerprints.toml`
 pub fn fingerprint_path() -> Result<PathBuf> {
     Ok(state_dir()?.join(FINGERPRINTS_FILE))
+}
+
+/// Path to the machine-local variable store: `~/.dotling/vars.toml`
+pub fn vars_path() -> Result<PathBuf> {
+    Ok(state_dir()?.join(VARS_FILE))
 }
 
 /// Root directory for backup sessions: `~/.dotling/backups/`

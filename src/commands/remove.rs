@@ -29,7 +29,10 @@ pub fn run(entries: &[String]) -> Result<()> {
             let target_is_symlink = crate::fs::is_symlink(&target);
             let target_exists = target.exists();
 
-            let repo_source = if entry.encrypted && !entry.directory {
+            let repo_source = if entry.template {
+                // Template source includes the .dtmpl suffix already in entry.source
+                repo_root.join(&entry.source)
+            } else if entry.encrypted && !entry.directory {
                 repo_root.join(format!("{}.enc", entry.source))
             } else {
                 repo_root.join(&entry.source)
@@ -271,6 +274,7 @@ mod tests {
             method: None,
             encrypted: false,
             directory: false,
+            template: false,
             os: None,
             permissions: None,
             before: None,
@@ -333,6 +337,7 @@ mod tests {
             method: Some(DeployMethod::Copy),
             encrypted: false,
             directory: false,
+            template: false,
             os: None,
             permissions: None,
             before: None,
@@ -396,6 +401,7 @@ mod tests {
             method: None,
             encrypted: false,
             directory: true,
+            template: false,
             os: None,
             permissions: None,
             before: None,

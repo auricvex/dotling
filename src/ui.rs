@@ -98,6 +98,7 @@ pub enum Status {
     Missing,
     Broken,
     Encrypted,
+    Template,
     Conflict,
 }
 
@@ -109,13 +110,14 @@ impl Status {
             Self::Missing => "✗",
             Self::Broken => "!",
             Self::Encrypted => "🔒",
+            Self::Template => "📄",
             Self::Conflict => "⚡",
         }
     }
 
     fn color(&self) -> &str {
         match self {
-            Self::Ok | Self::Encrypted => GREEN,
+            Self::Ok | Self::Encrypted | Self::Template => GREEN,
             Self::Modified => YELLOW,
             Self::Missing | Self::Broken => RED,
             Self::Conflict => MAGENTA,

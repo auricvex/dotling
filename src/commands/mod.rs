@@ -6,4 +6,5 @@ pub mod init;
 pub mod remove;
 pub mod status;
 pub mod sync;
+pub mod vars;
 pub mod vault;

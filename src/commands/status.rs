@@ -68,7 +68,32 @@ pub fn run(show_diff: bool) -> Result<()> {
             let (status, badge) = match state {
                 crate::deploy::EntryState::Deployed => {
                     ok_count += 1;
-                    if entry.encrypted {
+                    if entry.template {
+                        // Template: check if deployed file matches the last rendered fingerprint.
+                        // We use the source path (template file) and target path.
+                        let source_path = repo_root.join(&entry.source);
+                        let badge = match crate::path::expand_tilde(Path::new(&entry.target)) {
+                            Ok(target_path) => {
+                                match fp_store.is_in_sync(&entry.source, &source_path, &target_path)
+                                {
+                                    Some(true) => SyncBadge::InSync,
+                                    Some(false) => {
+                                        warning_count += 1;
+                                        ok_count -= 1;
+                                        SyncBadge::NeedsSync
+                                    }
+                                    None => {
+                                        // Never synced — treat as needs sync
+                                        warning_count += 1;
+                                        ok_count -= 1;
+                                        SyncBadge::NeedsSync
+                                    }
+                                }
+                            }
+                            Err(_) => SyncBadge::InSync,
+                        };
+                        (ui::Status::Template, badge)
+                    } else if entry.encrypted {
                         let enc_path = if entry.directory {
                             repo_root.join(&entry.source)
                         } else {

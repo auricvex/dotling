@@ -1,4 +1,4 @@
-use crate::{config::Config, error::Result, store, ui};
+use crate::{config::Config, error::Result, store, ui, vars::VarStore};
 
 /// Audit repository health.
 #[allow(clippy::too_many_lines)]
@@ -34,7 +34,8 @@ pub fn run() -> Result<()> {
                         let state =
                             crate::deploy::check_state(entry, &repo_root, config.settings.method);
 
-                        let source_path = if entry.encrypted && !entry.directory {
+                        let source_path = if entry.encrypted && !entry.directory && !entry.template
+                        {
                             repo_root.join(format!("{}.enc", entry.source))
                         } else {
                             repo_root.join(&entry.source)
@@ -79,6 +80,65 @@ pub fn run() -> Result<()> {
                                 ));
                                 warnings += 1;
                             }
+                        }
+                    }
+
+                    // 3b. Template-specific checks
+                    let var_store = VarStore::load().unwrap_or_default();
+                    let repo_root_str = repo_root.to_string_lossy().into_owned();
+                    let ctx = crate::template::RenderContext::new(
+                        &repo_root_str,
+                        &config.vars,
+                        &var_store.as_pairs(),
+                    );
+
+                    for entry in &config.entries {
+                        if !entry.template {
+                            continue;
+                        }
+
+                        if entry.encrypted {
+                            ui::info(&format!(
+                                "template (encrypted — cannot validate without vault): {}",
+                                entry.source
+                            ));
+                            continue;
+                        }
+
+                        let source_path = repo_root.join(&entry.source);
+                        if !source_path.exists() {
+                            continue; // Already reported above
+                        }
+
+                        let Ok(text) = std::fs::read_to_string(&source_path) else {
+                            continue;
+                        };
+
+                        let vars = crate::template::scan_variables(&text);
+                        let mut missing_count = 0usize;
+                        for var in &vars {
+                            if var.namespace == "var" && ctx.resolve("var", &var.key).is_none() {
+                                ui::warning(&format!(
+                                    "template `{}`: unresolved var.{} — run `dotling vars set {} <value>`",
+                                    entry.source, var.key, var.key
+                                ));
+                                warnings += 1;
+                                missing_count += 1;
+                            }
+                        }
+
+                        if missing_count == 0 && !vars.is_empty() {
+                            ok += 1;
+                        }
+                    }
+
+                    // 3c. Check [vars] defaults for suspicious values
+                    for (key, value) in &config.vars {
+                        if let Some(hint) =
+                            crate::vars::looks_like_real_value(key, value, &var_store)
+                        {
+                            ui::warning(&format!("[vars] {hint}"));
+                            warnings += 1;
                         }
                     }
 

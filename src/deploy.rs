@@ -22,12 +22,19 @@ pub enum EntryState {
 
 /// Check the deployment state of an entry.
 pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod) -> EntryState {
-    let method = entry.method.unwrap_or(default_method);
     let Ok(target) = crate::path::expand_tilde(std::path::Path::new(&entry.target)) else {
         return EntryState::Missing;
     };
 
-    let source = if entry.encrypted && !entry.directory {
+    // Templates: source is the .dtmpl file itself (always present by name),
+    // and deployment is always copy mode (rendered output).
+    // Encrypted templates: source is the .dtmpl.enc file.
+    // Normal encrypted files: source is <name>.enc.
+    let source = if entry.template {
+        // The source field already contains the full name (e.g. "config/foo.dtmpl"
+        // or "config/foo.dtmpl.enc") — use it as-is.
+        repo_root.join(&entry.source)
+    } else if entry.encrypted && !entry.directory {
         repo_root.join(format!("{}.enc", entry.source))
     } else {
         repo_root.join(&entry.source)
@@ -36,6 +43,13 @@ pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod
     if !target.exists() && !crate::fs::is_symlink(&target) {
         return EntryState::Missing;
     }
+
+    // Templates are always copy-deployed (rendered output is a plain file).
+    let method = if entry.template {
+        DeployMethod::Copy
+    } else {
+        entry.method.unwrap_or(default_method)
+    };
 
     match method {
         DeployMethod::Symlink if !entry.encrypted => {
@@ -56,18 +70,25 @@ pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod
             }
         }
         _ => {
-            // Copy mode (or encrypted, which is always copy)
+            // Copy mode (or encrypted, or template — all use copy)
             if crate::fs::is_symlink(&target) {
                 EntryState::Conflict
-            } else if entry.encrypted {
+            } else if entry.encrypted && !entry.template {
                 // For encrypted files, we can't easily check if content matches
                 // without decrypting. Just check existence.
                 EntryState::Deployed
             } else {
-                match crate::fs::files_identical(&source, &target) {
-                    Ok(true) => EntryState::Deployed,
-                    Ok(false) => EntryState::Modified,
-                    Err(_) => EntryState::Broken,
+                // For templates, the "source" for comparison is the deployed rendered file,
+                // not the .dtmpl file. We only need to know if the target exists.
+                // Fingerprint-based comparison happens in status/sync.
+                if entry.template {
+                    EntryState::Deployed
+                } else {
+                    match crate::fs::files_identical(&source, &target) {
+                        Ok(true) => EntryState::Deployed,
+                        Ok(false) => EntryState::Modified,
+                        Err(_) => EntryState::Broken,
+                    }
                 }
             }
         }

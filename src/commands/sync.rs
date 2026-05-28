@@ -6,7 +6,10 @@ use crate::{
     deploy::EntryState,
     error::{Error, Result},
     fingerprint::{FingerprintStore, WhichSide},
-    merge, platform, store, ui,
+    merge, platform, store,
+    template::RenderContext,
+    ui,
+    vars::VarStore,
 };
 
 // ── Conflict origin ───────────────────────────────────────────────
@@ -103,10 +106,67 @@ pub fn run(
     let mut fp_store = FingerprintStore::load(fp_path);
     let mut fp_dirty = false;
 
+    // ── Template bootstrap — first-sync prompt ────────────────────
+    // Load local var store once; we may update it during bootstrap.
+    let mut var_store = VarStore::load().unwrap_or_default();
+
+    if !dry_run && !no_interactive {
+        let repo_root_str = repo_root.to_string_lossy().into_owned();
+        let ctx = RenderContext::new(&repo_root_str, &config.vars, &var_store.as_pairs());
+        let missing = crate::commands::vars::collect_missing_vars(&config, &repo_root, &ctx);
+        if !missing.is_empty() {
+            let any_set =
+                crate::commands::vars::bootstrap_prompt(&missing, &config.vars, &mut var_store);
+            if any_set {
+                if let Err(e) = var_store.save() {
+                    ui::warning(&format!("could not save vars.toml: {e}"));
+                }
+            }
+        }
+    }
+
     for entry in &config.entries {
         // Skip entries not meant for this OS.
         if !platform::should_deploy(entry.os.as_deref()) {
             skipped += 1;
+            continue;
+        }
+
+        // ── Template entries: always render and deploy — skip conflict logic
+        if entry.template {
+            if dry_run {
+                ui::info(&format!(
+                    "would render (template): {} → {}",
+                    entry.source, entry.target
+                ));
+                skipped += 1;
+                continue;
+            }
+            let repo_root_str = repo_root.to_string_lossy().into_owned();
+            match sync_template_entry(
+                entry,
+                &repo_root,
+                &repo_root_str,
+                &config.vars,
+                &var_store,
+                always_backup,
+                &mut password_cache,
+                &mut fp_store,
+                &mut fp_dirty,
+            ) {
+                Ok(rendered) => {
+                    if rendered {
+                        ui::success(&format!("render {} → {}", entry.source, entry.target));
+                        pushed += 1;
+                    } else {
+                        skipped += 1;
+                    }
+                }
+                Err(e) => {
+                    ui::error(&format!("{} ↔ {}: {e}", entry.source, entry.target));
+                    errors += 1;
+                }
+            }
             continue;
         }
 
@@ -879,4 +939,111 @@ fn get_or_prompt_password(cache: &mut Option<String>) -> String {
     let p = ui::password("Vault password");
     *cache = Some(p.clone());
     p
+}
+
+// ── Template sync ─────────────────────────────────────────────────
+
+/// Render and deploy a single template entry.
+///
+/// Returns `Ok(true)` if the rendered file was written, `Ok(false)` if it was
+/// already up-to-date (fingerprint matched).
+#[allow(clippy::too_many_arguments)]
+fn sync_template_entry(
+    entry: &Entry,
+    repo_root: &Path,
+    repo_root_str: &str,
+    config_vars: &[(String, String)],
+    var_store: &VarStore,
+    always_backup: bool,
+    password_cache: &mut Option<String>,
+    fp_store: &mut FingerprintStore,
+    fp_dirty: &mut bool,
+) -> Result<bool> {
+    let source_path = repo_root.join(&entry.source);
+
+    if !source_path.exists() {
+        return Err(Error::Deploy {
+            entry: entry.source.clone(),
+            message: format!(
+                "template source not found in repo: {}",
+                source_path.display()
+            ),
+        });
+    }
+
+    // Read template text (decrypt if encrypted)
+    let template_text: String = if entry.encrypted {
+        let password = get_or_prompt_password(password_cache);
+        let mk = crate::crypto::vault::unlock_vault(&password)?;
+        let encrypted = fs::read(&source_path)
+            .map_err(|e| Error::io(&source_path, "read encrypted template", e))?;
+        let plaintext_bytes = crate::crypto::decrypt_with_key(&encrypted, &mk)?;
+        String::from_utf8(plaintext_bytes).map_err(|_| Error::Template {
+            source: entry.source.clone(),
+            message: "encrypted template is not valid UTF-8".into(),
+        })?
+    } else {
+        fs::read_to_string(&source_path).map_err(|e| Error::io(&source_path, "read template", e))?
+    };
+
+    // Build render context
+    let ctx =
+        crate::template::RenderContext::new(repo_root_str, config_vars, &var_store.as_pairs());
+
+    // Render
+    let rendered = crate::template::render(&template_text, &ctx, &entry.source)?;
+
+    // Expand target path
+    let target_path = crate::path::expand_tilde(std::path::Path::new(&entry.target))?;
+
+    // Check fingerprint of rendered content against current deployed file
+    let rendered_hash = blake3_hash(rendered.as_bytes());
+    let current_hash = if target_path.exists() {
+        fs::read(&target_path)
+            .map(|b| blake3_hash(&b))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    if rendered_hash == current_hash && !current_hash.is_empty() {
+        // Already up-to-date
+        return Ok(false);
+    }
+
+    // Optionally backup existing target
+    if always_backup && target_path.exists() {
+        match backup::backup(&target_path, &entry.source) {
+            Ok(p) => ui::backup_notice(&p),
+            Err(e) => ui::warning(&format!("could not create backup: {e}")),
+        }
+    }
+
+    // Write rendered output
+    crate::fs::atomic_write(&target_path, rendered.as_bytes())?;
+
+    // Apply permissions if set
+    if let Some(perms) = entry.permissions {
+        crate::fs::set_permissions(&target_path, perms)?;
+    }
+
+    // Record fingerprint (hash of rendered content)
+    // We store the rendered output hash; key = entry.source
+    if fp_store
+        .record_plain(&entry.source, &source_path, &target_path)
+        .is_ok()
+    {
+        *fp_dirty = true;
+    }
+
+    Ok(true)
+}
+
+/// Compute a simple hash of `data` using blake2b (already a dependency).
+/// Returns raw digest bytes.
+fn blake3_hash(data: &[u8]) -> Vec<u8> {
+    use blake2::{Blake2b512, Digest};
+    let mut hasher = Blake2b512::new();
+    hasher.update(data);
+    hasher.finalize().to_vec()
 }
