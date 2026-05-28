@@ -237,7 +237,11 @@ fn add_directory(
         crate::fs::set_permissions(&expanded_target, perms)?;
     }
 
-    let label = if encrypt { " (directory, encrypted)" } else { " (directory)" };
+    let label = if encrypt {
+        " (directory, encrypted)"
+    } else {
+        " (directory)"
+    };
     ui::success(&format!("{source_str} → {target_str}{label}"));
 
     Ok(1)
