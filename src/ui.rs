@@ -2,15 +2,15 @@ use std::io::{self, BufRead, Write};
 
 // ── ANSI color codes ──────────────────────────────────────────────
 
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const RED: &str = "\x1b[31m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const BLUE: &str = "\x1b[34m";
-const MAGENTA: &str = "\x1b[35m";
-const CYAN: &str = "\x1b[36m";
+pub const RESET: &str = "\x1b[0m";
+pub const BOLD: &str = "\x1b[1m";
+pub const DIM: &str = "\x1b[2m";
+pub const RED: &str = "\x1b[31m";
+pub const GREEN: &str = "\x1b[32m";
+pub const YELLOW: &str = "\x1b[33m";
+pub const BLUE: &str = "\x1b[34m";
+pub const MAGENTA: &str = "\x1b[35m";
+pub const CYAN: &str = "\x1b[36m";
 
 /// Returns `true` if the terminal supports color output.
 ///
@@ -44,7 +44,7 @@ unsafe fn libc_isatty_inner(fd: i32) -> i32 {
 }
 
 /// Apply a color if colors are enabled.
-fn paint(color: &str, text: &str) -> String {
+pub fn paint(color: &str, text: &str) -> String {
     if color_enabled() {
         format!("{color}{text}{RESET}")
     } else {

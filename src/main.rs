@@ -7,6 +7,7 @@ mod deploy;
 mod error;
 mod fingerprint;
 pub mod fs;
+pub mod hooks;
 mod merge;
 pub mod path;
 mod platform;
@@ -48,7 +49,17 @@ fn run(cli: Cli) -> error::Result<()> {
             prefer_actual,
             no_interactive,
             backup,
-        } => commands::sync::run(dry_run, force, prefer_actual, no_interactive, backup),
+            allow_hooks,
+            no_hooks,
+        } => commands::sync::run(
+            dry_run,
+            force,
+            prefer_actual,
+            no_interactive,
+            backup,
+            allow_hooks,
+            no_hooks,
+        ),
 
         Command::Status { diff } => commands::status::run(diff),
 

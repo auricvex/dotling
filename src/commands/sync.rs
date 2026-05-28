@@ -56,12 +56,15 @@ enum SyncAction {
 /// Synchronise all tracked entries in both directions.
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::fn_params_excessive_bools)]
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     dry_run: bool,
     force: bool,
     prefer_actual: bool,
     no_interactive: bool,
     always_backup: bool,
+    allow_hooks: bool,
+    no_hooks: bool,
 ) -> Result<()> {
     let repo_root = store::require_repo_root()?;
     let config_path = store::config_path(&repo_root);
@@ -71,6 +74,21 @@ pub fn run(
         ui::info("no entries to sync");
         ui::hint("add files with `dotling add <path>`");
         return Ok(());
+    }
+
+    let mut hook_session = crate::hooks::HookSession::new(allow_hooks, no_hooks);
+
+    // ── Global Before Hook ───────────────────────────────────────
+    if let Some(ref before) = config.hooks.before {
+        hook_session.run_hook(
+            before,
+            "global_before",
+            &repo_root,
+            dry_run,
+            no_interactive,
+            None,
+            None,
+        )?;
     }
 
     let mut pushed = 0usize;
@@ -115,6 +133,37 @@ pub fn run(
                 },
             };
             ui::info(&format!("{label}: {} ↔ {}", entry.source, entry.target));
+
+            // In dry-run, still print the would-run message for hooks if action is not Ok
+            if action != SyncAction::Ok {
+                let action_str = match action {
+                    SyncAction::Push | SyncAction::FixSymlink => "push",
+                    SyncAction::Pull => "pull",
+                    _ => "unknown",
+                };
+                if let Some(ref before) = entry.before {
+                    hook_session.run_hook(
+                        before,
+                        "entry_before",
+                        &repo_root,
+                        dry_run,
+                        no_interactive,
+                        Some(entry),
+                        Some(action_str),
+                    )?;
+                }
+                if let Some(ref after) = entry.after {
+                    hook_session.run_hook(
+                        after,
+                        "entry_after",
+                        &repo_root,
+                        dry_run,
+                        no_interactive,
+                        Some(entry),
+                        Some(action_str),
+                    )?;
+                }
+            }
             continue;
         }
 
@@ -154,6 +203,29 @@ pub fn run(
             continue;
         };
 
+        let action_str = match final_action {
+            SyncAction::Push | SyncAction::FixSymlink => "push",
+            SyncAction::Pull => "pull",
+            _ => "unknown",
+        };
+
+        // ── Entry Before Hook ──────────────────────────────────
+        if let Some(ref before) = entry.before {
+            if let Err(e) = hook_session.run_hook(
+                before,
+                "entry_before",
+                &repo_root,
+                dry_run,
+                no_interactive,
+                Some(entry),
+                Some(action_str),
+            ) {
+                ui::error(&format!("before hook for '{}' failed: {e}", entry.source));
+                errors += 1;
+                continue;
+            }
+        }
+
         // ── Execute the resolved action ────────────────────────
         let result = match final_action {
             SyncAction::Push | SyncAction::FixSymlink => {
@@ -179,23 +251,66 @@ pub fn run(
         };
 
         match result {
-            Ok(()) => match final_action {
-                SyncAction::Push | SyncAction::FixSymlink => {
-                    ui::success(&format!("push {} → {}", entry.source, entry.target));
-                    pushed += 1;
-                    record_fingerprint_after_push(entry, &repo_root, &mut fp_store, &mut fp_dirty);
+            Ok(()) => {
+                match final_action {
+                    SyncAction::Push | SyncAction::FixSymlink => {
+                        ui::success(&format!("push {} → {}", entry.source, entry.target));
+                        pushed += 1;
+                        record_fingerprint_after_push(
+                            entry,
+                            &repo_root,
+                            &mut fp_store,
+                            &mut fp_dirty,
+                        );
+                    }
+                    SyncAction::Pull => {
+                        ui::success(&format!("pull {} ← {}", entry.source, entry.target));
+                        pulled += 1;
+                        record_fingerprint_after_pull(
+                            entry,
+                            &repo_root,
+                            &mut fp_store,
+                            &mut fp_dirty,
+                        );
+                    }
+                    _ => {}
                 }
-                SyncAction::Pull => {
-                    ui::success(&format!("pull {} ← {}", entry.source, entry.target));
-                    pulled += 1;
-                    record_fingerprint_after_pull(entry, &repo_root, &mut fp_store, &mut fp_dirty);
+
+                // ── Entry After Hook ───────────────────────────────────
+                if let Some(ref after) = entry.after {
+                    if let Err(e) = hook_session.run_hook(
+                        after,
+                        "entry_after",
+                        &repo_root,
+                        dry_run,
+                        no_interactive,
+                        Some(entry),
+                        Some(action_str),
+                    ) {
+                        ui::error(&format!("after hook for '{}' failed: {e}", entry.source));
+                        errors += 1;
+                    }
                 }
-                _ => {}
-            },
+            }
             Err(e) => {
                 ui::error(&format!("{} ↔ {}: {e}", entry.source, entry.target));
                 errors += 1;
             }
+        }
+    }
+
+    // ── Global After Hook ────────────────────────────────────────
+    if !dry_run {
+        if let Some(ref after) = config.hooks.after {
+            hook_session.run_hook(
+                after,
+                "global_after",
+                &repo_root,
+                dry_run,
+                no_interactive,
+                None,
+                None,
+            )?;
         }
     }
 
@@ -582,12 +697,7 @@ fn pull_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Result<()>
 
     if entry.directory {
         let repo_dir = repo_root.join(&entry.source);
-        pull_encrypted_directory(
-            &target,
-            &repo_dir,
-            entry,
-            password,
-        )?;
+        pull_encrypted_directory(&target, &repo_dir, entry, password)?;
     } else {
         let enc_path = repo_root.join(format!("{}.enc", entry.source));
         let plaintext = fs::read(&target).map_err(|e| Error::io(&target, "read target", e))?;

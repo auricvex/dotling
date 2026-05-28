@@ -273,6 +273,8 @@ mod tests {
             directory: false,
             os: None,
             permissions: None,
+            before: None,
+            after: None,
         };
         config.add_entry(entry.clone()).unwrap();
         config.save().unwrap();
@@ -333,6 +335,8 @@ mod tests {
             directory: false,
             os: None,
             permissions: None,
+            before: None,
+            after: None,
         };
         config.add_entry(entry.clone()).unwrap();
         config.save().unwrap();
@@ -394,6 +398,8 @@ mod tests {
             directory: true,
             os: None,
             permissions: None,
+            before: None,
+            after: None,
         };
         config.add_entry(entry.clone()).unwrap();
         config.save().unwrap();
