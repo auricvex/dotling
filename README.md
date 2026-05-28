@@ -14,7 +14,7 @@
 
 ---
 
-**dotling** v0.3.1 has been rebuilt from scratch. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, and multi-OS support — so you can set up a new machine in seconds.
+**dotling** v0.5.0 is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, backups, hooks, and multi-OS support — so you can set up a new machine in seconds.
 
 ## Features
 
@@ -28,6 +28,10 @@
 - **Native Git integration** — dotling manages the symlinks, you manage the repo with native `git` commands
 - **Health checks** — `dotling doctor` audits broken links, orphaned entries, and repo issues
 - **Conflict-safe** — refuses to overwrite unmanaged files without explicit confirmation
+- **Automated Backups** — protects local files from accidental overwrites by saving them to chronological backup sessions
+- **Lifecycle Hooks** — run custom commands before/after syncing at a repository or entry level with safe trust verification
+- **Interactive 3-way Merge** — cleanly merge changes between repo and local files with standard git-style conflict markers
+- **Fingerprint-based Status** — speed up encrypted and copy-mode sync checks using lightweight Blake2s-256 fingerprints, without prompting for passwords
 
 ## Installation
 
@@ -93,13 +97,14 @@ git push
 |---|---|
 | `dotling init <path\|url>` | Initialize a new repo or clone an existing one |
 | `dotling add <paths>` | Move files into the repo and deploy a symlink back |
-| `dotling remove <entries>` | Undeploy, restore the original file, and remove from tracking |
+| `dotling remove <entries>` | Undeploy, safely restore tracked files/folders recursively to their original target locations (decrypting if encrypted), and remove from tracking |
 | `dotling sync` | Bidirectional sync — push repo → actual and pull actual → repo |
 | `dotling status` | Show deployment status of all tracked entries |
 | `dotling encrypt <paths>` | Encrypt tracked entries using your Vault |
 | `dotling decrypt <paths>` | Decrypt encrypted entries back to plaintext |
 | `dotling vault <action>` | Manage your password-protected encryption Vault |
 | `dotling doctor` | Audit repository health and report issues |
+| `dotling backup <action>` | Manage local file backups created by dotling before overwriting |
 
 ### Key Flags
 
@@ -110,8 +115,12 @@ git push
 | `add` | `--encrypt` | Encrypt the file(s) using the vault password |
 | `add` | `--os <platform>` | Target OS: `all`, `linux`, `macos`, `windows` |
 | `sync` | `--dry-run` | Preview changes without modifying anything |
-| `sync` | `--force` | Overwrite conflicting files (repo wins) |
+| `sync` | `--force` | Overwrite conflicting files (repo wins; local backups created automatically) |
 | `sync` | `--prefer-actual` | When both sides conflict, prefer the actual file (pull direction) |
+| `sync` | `--no-interactive` | Do not prompt for conflict resolution; skip conflicting entries and print a warning |
+| `sync` | `--backup` | Always back up the local file before any push that would overwrite it |
+| `sync` | `--allow-hooks` | Allow executing all hooks without prompting |
+| `sync` | `--no-hooks` | Disable executing any hooks |
 | `status` | `--diff` | Show inline diffs for modified copy entries |
 
 ## How It Works
@@ -149,17 +158,30 @@ Files are organized into categories automatically:
 
 ### Configuration Format
 
-Tracked entries are stored in `dotling.toml` at the repo root:
+Tracked entries and settings are stored in `dotling.toml` at the repo root:
 
 ```toml
+# dotling.toml — managed by dotling, safe to hand-edit
+
+[settings]
+method = "symlink" # Default sync method
+
+[hooks]
+init = "echo 'Initializing repo...'"
+before = "echo 'Starting global before-sync hook...'"
+after = "echo 'Global after-sync hook completed.'"
+
 [[entries]]
 source = "shell/zshrc"
 target = "~/.zshrc"
+before = "echo 'Updating zshrc...'"
+after = "echo 'zshrc updated!'"
 
 [[entries]]
 source = "config/nvim/init.lua"
 target = "~/.config/nvim/init.lua"
 method = "copy"
+permissions = "0600" # Apply octal permissions on sync
 
 [[entries]]
 source = "shell/bashrc"
@@ -180,7 +202,7 @@ When deploying, dotling automatically skips entries that don't match the current
 
 ### Encryption Vault
 
-dotling v0.3.1 includes a built-in portable encryption Vault protected by Argon2id and ChaCha20-Poly1305. This lets you safely commit API keys, `.env` files, or ssh configs to your public dotfiles repo.
+dotling includes a built-in portable encryption Vault protected by Argon2id and ChaCha20-Poly1305. This lets you safely commit API keys, `.env` files, or ssh configs to your public dotfiles repo.
 
 1. **Initialize your Vault:**
    ```sh
@@ -213,6 +235,73 @@ dotling v0.3.1 includes a built-in portable encryption Vault protected by Argon2
    dotling sync
    ```
 
+### Lifecycle Hooks
+
+dotling supports executing hooks (shell commands) globally or per-entry during the sync process. Hooks can be used for actions like reloading your shell, compiling configurations, or running custom setup scripts.
+
+#### Global Hooks
+Global hooks run at the very beginning and very end of the `dotling sync` session:
+- `init`: Command run during repository initialization.
+- `before`: Command run before any entries are synced.
+- `after`: Command run after all entries are successfully synced.
+
+#### Entry-level Hooks
+You can define hooks specific to individual tracked entries:
+- `before`: Command run before this entry is pushed or pulled.
+- `after`: Command run after this entry is successfully pushed or pulled.
+
+#### Execution Context
+Hooks are executed in the repository root directory. The following environment variables are populated to provide rich runtime context:
+- `DOTLING_HOOK_TYPE`: Type of hook (`global_before`, `global_after`, `entry_before`, `entry_after`).
+- `DOTLING_REPO_ROOT`: Absolute path to the dotfiles repository.
+- `DOTLING_DRY_RUN`: `"true"` if running with `--dry-run`, otherwise `"false"`.
+- `DOTLING_ENTRY_SOURCE`: (Entry hooks only) Repo-relative path of the entry's source file/folder.
+- `DOTLING_ENTRY_TARGET`: (Entry hooks only) Target path of the entry's deployed file/folder.
+- `DOTLING_ENTRY_ACTION`: (Entry hooks only) Current action being performed (`"push"` or `"pull"`).
+
+#### Hook Trust System
+To protect against malicious code in imported dotfile repositories, dotling prompts for user verification before running a hook for the first time:
+```text
+  ⚡ Untrusted hook detected (type: entry_before):
+    echo "updating shell configuration"
+    ? Do you want to run this hook? [y]es (once) / [n]o (skip) / [a]lways (trust) / [s]kip all >
+```
+Selecting `always` stores the Blake2s-256 hash of the command string in `~/.dotling/state/trusted_hooks` so it runs seamlessly on subsequent syncs.
+- Pass `--allow-hooks` (or set `DOTLING_ALLOW_HOOKS=1`) to automatically execute all hooks without prompting.
+- Pass `--no-hooks` (or set `DOTLING_NO_HOOKS=1`) to completely disable hook execution.
+
+### Automated Backups & Conflict Resolution
+
+#### Backups
+To protect your local environment from accidental data loss, dotling automatically backs up files before they are overwritten:
+- Backups are stored in `~/.dotling/backups/<unix-seconds>/<repo-relative-source-path>`.
+- Pass `--backup` to the sync command to always force a local backup before any push that would overwrite a file, even when there is no conflict.
+- List backup sessions using `dotling backup list`.
+- Prune old backups using `dotling backup clean [--keep-last N] [--older-than DAYS]`. By default, clean keeps the 10 most recent sessions.
+
+#### Conflict Resolution & Three-way Merge
+When sync detects a conflict between the repository and your local target, you can choose from the following interactive options:
+- `[s]` Diff: Compare inline changes.
+- `[k]` Keep Local: Overwrite the repository with your local file (pulls to repo).
+- `[r]` Use Repo: Overwrite the local file with the repository version (pushes to local, backs up the local file first).
+- `[m]` Merge: Performs a standard line-level **three-way merge**! It uses the last-in-sync snapshot at `~/.dotling/snapshots/` as the base, combining modifications from both the repo (ours) and local target (theirs). Non-overlapping changes are cleanly auto-merged, while overlapping conflicts are highlighted with standard git conflict markers:
+  ```text
+  <<<<<<< repo
+  repo version content
+  =======
+  actual local content
+  >>>>>>> actual
+  ```
+  The merge outcome is written back to both the local disk and the repository, resolving the conflict.
+
+### Sync Fingerprints
+
+Previously, encrypted entries had to be decrypted to verify their sync state. dotling v0.5.0 introduces lightweight Blake2s-256 sync fingerprints stored in `~/.dotling/fingerprints.toml`.
+- After each successful sync, dotling records the content hashes of the `.enc` ciphertext and the local plaintext target.
+- On subsequent `status` or `sync` checks, dotling compares current file hashes against the stored fingerprint.
+- **Benefits:** You can run `dotling status` or `dotling sync --dry-run` to audit your system instantly, without entering your vault password. A password is only requested when actual file modifications need to be decrypted or re-encrypted!
+- For copy-mode plain files, fingerprints track both repo source and target file hashes, enabling deterministic detection of which side has changed (`who_changed()`).
+
 ## Contributing
 
 Contributions are welcome! Please:
@@ -225,18 +314,31 @@ Contributions are welcome! Please:
 
 ### Development
 
+You can build and test this project using [just](https://github.com/casey/just) inside a Nix environment:
+
 ```sh
 # Clone and build
 git clone https://github.com/auricvex/dotling.git
 cd dotling
-nix develop --command cargo build
 
-# Run tests
-nix develop --command cargo test
+# List all available recipes
+nix develop --command just
 
-# Lint
-nix develop --command cargo clippy
-nix develop --command cargo fmt --check
+# Build dotling
+nix develop --command just build
+
+# Run all tests
+nix develop --command just test
+
+# Run check and clippy lints
+nix develop --command just check
+nix develop --command just clippy
+
+# Run formatting checks
+nix develop --command just fmt-check
+
+# Run the complete CI suite locally
+nix develop --command just ci
 ```
 
 ## License
