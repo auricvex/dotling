@@ -188,7 +188,8 @@ pub fn hash_path(path: &Path) -> Result<String> {
         for file in files {
             let rel_path = file.strip_prefix(path).unwrap_or(&file);
             hasher.update(rel_path.to_string_lossy().as_bytes());
-            let content = fs::read(&file).map_err(|e| Error::io(&file, "read for fingerprint", e))?;
+            let content =
+                fs::read(&file).map_err(|e| Error::io(&file, "read for fingerprint", e))?;
             hasher.update(&content);
         }
         let digest = hasher.finalize();

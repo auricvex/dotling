@@ -152,7 +152,10 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
         if !source.exists() {
             return Err(Error::Deploy {
                 entry: entry.source.clone(),
-                message: format!("encrypted source directory `{}` not found", source.display()),
+                message: format!(
+                    "encrypted source directory `{}` not found",
+                    source.display()
+                ),
             });
         }
         deploy_encrypted_directory(&source, &target, &master_key)?;
@@ -164,7 +167,8 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
                 message: format!("encrypted source `{}` not found", source.display()),
             });
         }
-        let encrypted = fs::read(&source).map_err(|e| Error::io(&source, "read encrypted file", e))?;
+        let encrypted =
+            fs::read(&source).map_err(|e| Error::io(&source, "read encrypted file", e))?;
         let plaintext = crate::crypto::decrypt_with_key(&encrypted, &master_key)?;
         crate::fs::atomic_write(&target, &plaintext)?;
     }

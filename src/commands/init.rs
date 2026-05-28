@@ -44,6 +44,7 @@ pub fn run(path_or_url: &str) -> Result<()> {
                 path.display(),
                 config.entries.len()
             ));
+            maybe_run_init_hook(&path)?;
             return Ok(());
         }
 
@@ -65,6 +66,7 @@ pub fn run(path_or_url: &str) -> Result<()> {
         }
 
         ui::success(&format!("initialized at `{}`", path.display()));
+        maybe_run_init_hook(&path)?;
         return Ok(());
     }
 
@@ -79,6 +81,7 @@ pub fn run(path_or_url: &str) -> Result<()> {
     ui::success(&format!("initialized new repo at `{}`", path.display()));
     ui::hint("add files with `dotling add <path>`");
 
+    maybe_run_init_hook(&path)?;
     Ok(())
 }
 
@@ -123,6 +126,7 @@ fn clone_repo(url: &str) -> Result<()> {
     ));
     ui::hint("run `dotling sync` to set up symlinks");
 
+    maybe_run_init_hook(&dest)?;
     Ok(())
 }
 
@@ -151,4 +155,17 @@ fn is_git_url(s: &str) -> bool {
         || s.starts_with("ssh://")
         || s.starts_with("git://")
         || s.ends_with(".git")
+}
+
+/// Runs the `init` hook after initialization is complete, if defined in config.
+fn maybe_run_init_hook(repo_path: &Path) -> Result<()> {
+    let config_path = store::config_path(repo_path);
+    if config_path.exists() {
+        let config = Config::load(&config_path)?;
+        if let Some(ref init) = config.hooks.init {
+            let mut session = crate::hooks::HookSession::new(false, false);
+            session.run_hook(init, "global_init", repo_path, false, false, None, None)?;
+        }
+    }
+    Ok(())
 }

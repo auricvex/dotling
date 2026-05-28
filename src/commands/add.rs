@@ -127,6 +127,8 @@ fn add_file(
         directory: false,
         os: os.map(String::from),
         permissions,
+        before: None,
+        after: None,
     };
 
     config.add_entry(entry)?;
@@ -211,6 +213,8 @@ fn add_directory(
         directory: true,
         os: os.map(String::from),
         permissions,
+        before: None,
+        after: None,
     };
 
     config.add_entry(entry)?;

@@ -54,6 +54,10 @@ pub struct Entry {
     pub os: Option<String>,
     /// File permissions as an octal u32 (e.g. 0o600).
     pub permissions: Option<u32>,
+    /// Command to run before syncing this entry.
+    pub before: Option<String>,
+    /// Command to run after syncing this entry.
+    pub after: Option<String>,
 }
 
 /// Repo-level settings.
@@ -71,11 +75,20 @@ impl Default for Settings {
     }
 }
 
+/// Global lifecycle hooks.
+#[derive(Debug, Clone, Default)]
+pub struct Hooks {
+    pub init: Option<String>,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
 /// The top-level configuration stored in `dotling.toml`.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub settings: Settings,
     pub entries: Vec<Entry>,
+    pub hooks: Hooks,
     /// Path to the config file itself.
     path: PathBuf,
 }
@@ -86,6 +99,7 @@ impl Config {
         Self {
             settings: Settings::default(),
             entries: Vec::new(),
+            hooks: Hooks::default(),
             path,
         }
     }
@@ -196,6 +210,7 @@ impl Config {
 fn parse_config(input: &str, path: &Path) -> Result<Config> {
     let mut settings = Settings::default();
     let mut entries = Vec::new();
+    let mut hooks = Hooks::default();
 
     let mut current_section: Option<String> = None;
     let mut current_entry: Option<EntryBuilder> = None;
@@ -246,6 +261,7 @@ fn parse_config(input: &str, path: &Path) -> Result<Config> {
                 current_section.as_deref(),
                 &mut settings,
                 &mut current_entry,
+                &mut hooks,
                 line_num,
             )?;
         }
@@ -259,16 +275,19 @@ fn parse_config(input: &str, path: &Path) -> Result<Config> {
     Ok(Config {
         settings,
         entries,
+        hooks,
         path: path.to_path_buf(),
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_kv(
     key: &str,
     value: &str,
     current_section: Option<&str>,
     settings: &mut Settings,
     current_entry: &mut Option<EntryBuilder>,
+    hooks: &mut Hooks,
     line_num: usize,
 ) -> Result<()> {
     match current_section {
@@ -282,6 +301,17 @@ fn handle_kv(
             _ => {
                 return Err(Error::Config {
                     message: format!("unknown setting `{key}`"),
+                    line: Some(line_num),
+                });
+            }
+        },
+        Some("hooks") => match key {
+            "init" => hooks.init = Some(value.to_string()),
+            "before" => hooks.before = Some(value.to_string()),
+            "after" => hooks.after = Some(value.to_string()),
+            _ => {
+                return Err(Error::Config {
+                    message: format!("unknown hook `{key}`"),
                     line: Some(line_num),
                 });
             }
@@ -307,6 +337,8 @@ fn handle_kv(
                         });
                     }
                 }
+                "before" => builder.before = Some(value.to_string()),
+                "after" => builder.after = Some(value.to_string()),
                 _ => {
                     return Err(Error::Config {
                         message: format!("unknown entry field `{key}`"),
@@ -329,6 +361,8 @@ struct EntryBuilder {
     directory: bool,
     os: Option<String>,
     permissions: Option<u32>,
+    before: Option<String>,
+    after: Option<String>,
 }
 
 impl EntryBuilder {
@@ -362,6 +396,8 @@ impl EntryBuilder {
             directory: self.directory,
             os: self.os,
             permissions: self.permissions,
+            before: self.before,
+            after: self.after,
         })
     }
 }
@@ -429,6 +465,22 @@ fn serialize_config(config: &Config) -> String {
         let _ = writeln!(out, "method = \"{}\"\n", config.settings.method.as_str());
     }
 
+    // [hooks]
+    if config.hooks.init.is_some() || config.hooks.before.is_some() || config.hooks.after.is_some()
+    {
+        let _ = writeln!(out, "[hooks]");
+        if let Some(ref init) = config.hooks.init {
+            let _ = writeln!(out, "init = \"{}\"", escape_string(init));
+        }
+        if let Some(ref before) = config.hooks.before {
+            let _ = writeln!(out, "before = \"{}\"", escape_string(before));
+        }
+        if let Some(ref after) = config.hooks.after {
+            let _ = writeln!(out, "after = \"{}\"", escape_string(after));
+        }
+        let _ = writeln!(out);
+    }
+
     // [[entries]]
     for entry in &config.entries {
         let _ = writeln!(out, "[[entries]]");
@@ -449,6 +501,12 @@ fn serialize_config(config: &Config) -> String {
         }
         if let Some(perms) = entry.permissions {
             let _ = writeln!(out, "permissions = \"{perms:04o}\"");
+        }
+        if let Some(ref before) = entry.before {
+            let _ = writeln!(out, "before = \"{}\"", escape_string(before));
+        }
+        if let Some(ref after) = entry.after {
+            let _ = writeln!(out, "after = \"{}\"", escape_string(after));
         }
         let _ = writeln!(out);
     }
@@ -528,6 +586,8 @@ os = "macos"
                     directory: false,
                     os: None,
                     permissions: None,
+                    before: Some("echo 'entry before'".into()),
+                    after: Some("echo 'entry after'".into()),
                 },
                 Entry {
                     source: "config/nvim".into(),
@@ -537,8 +597,15 @@ os = "macos"
                     directory: true,
                     os: Some("linux".into()),
                     permissions: Some(0o600),
+                    before: None,
+                    after: None,
                 },
             ],
+            hooks: Hooks {
+                init: Some("echo 'init'".into()),
+                before: Some("echo 'global before'".into()),
+                after: Some("echo 'global after'".into()),
+            },
             path: PathBuf::from("test.toml"),
         };
 
@@ -547,9 +614,20 @@ os = "macos"
 
         assert_eq!(parsed.entries.len(), 2);
         assert_eq!(parsed.entries[0].source, "shell/zshrc");
+        assert_eq!(
+            parsed.entries[0].before.as_deref(),
+            Some("echo 'entry before'")
+        );
+        assert_eq!(
+            parsed.entries[0].after.as_deref(),
+            Some("echo 'entry after'")
+        );
         assert!(parsed.entries[1].encrypted);
         assert!(parsed.entries[1].directory);
         assert_eq!(parsed.entries[1].permissions, Some(0o600));
+        assert_eq!(parsed.hooks.init.as_deref(), Some("echo 'init'"));
+        assert_eq!(parsed.hooks.before.as_deref(), Some("echo 'global before'"));
+        assert_eq!(parsed.hooks.after.as_deref(), Some("echo 'global after'"));
     }
 
     #[test]
@@ -564,6 +642,8 @@ os = "macos"
                 directory: false,
                 os: None,
                 permissions: None,
+                before: None,
+                after: None,
             })
             .unwrap();
 
@@ -576,6 +656,8 @@ os = "macos"
                 directory: false,
                 os: None,
                 permissions: None,
+                before: None,
+                after: None,
             })
             .unwrap_err();
 
@@ -594,6 +676,8 @@ os = "macos"
                 directory: false,
                 os: None,
                 permissions: None,
+                before: None,
+                after: None,
             })
             .unwrap();
 
@@ -606,6 +690,8 @@ os = "macos"
                 directory: false,
                 os: None,
                 permissions: None,
+                before: None,
+                after: None,
             })
             .unwrap_err();
 
@@ -624,6 +710,8 @@ os = "macos"
                 directory: false,
                 os: None,
                 permissions: None,
+                before: None,
+                after: None,
             })
             .unwrap();
 
@@ -644,6 +732,8 @@ os = "macos"
                 directory: false,
                 os: None,
                 permissions: None,
+                before: None,
+                after: None,
             })
             .unwrap();
 

@@ -83,6 +83,14 @@ pub enum Command {
         /// even when there is no conflict.
         #[arg(long)]
         backup: bool,
+
+        /// Allow executing all hooks without prompting.
+        #[arg(long)]
+        allow_hooks: bool,
+
+        /// Disable executing any hooks.
+        #[arg(long)]
+        no_hooks: bool,
     },
 
     /// Show status of all tracked entries.
