@@ -14,6 +14,9 @@ use crate::{
     ui,
 };
 
+/// Maximum number of attempts for a hook command (1 initial + retries).
+const MAX_HOOK_ATTEMPTS: u32 = 3;
+
 /// Tracks trust state and manages lifecycle hook execution during a dotling session.
 pub struct HookSession {
     trusted_hashes: HashSet<String>,
@@ -226,17 +229,28 @@ impl HookSession {
             }
         }
 
-        let status = cmd
-            .status()
-            .map_err(|e| Error::User(format!("failed to start hook command '{command}': {e}")))?;
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
 
-        if !status.success() {
-            return Err(Error::User(format!(
-                "hook command '{command}' failed with {status}"
-            )));
+            let status = cmd.status().map_err(|e| {
+                Error::User(format!("failed to start hook command '{command}': {e}"))
+            })?;
+
+            if status.success() {
+                return Ok(());
+            }
+
+            if attempt < MAX_HOOK_ATTEMPTS {
+                ui::warning(&format!(
+                    "hook command '{command}' failed with {status} (attempt {attempt}/{MAX_HOOK_ATTEMPTS}), retrying…"
+                ));
+            } else {
+                return Err(Error::User(format!(
+                    "hook command '{command}' failed with {status} after {MAX_HOOK_ATTEMPTS} attempt(s)"
+                )));
+            }
         }
-
-        Ok(())
     }
 }
 
@@ -327,6 +341,33 @@ mod tests {
         // Should return early and not run anything or prompt
         session
             .run_hook("exit 1", "test", temp.path(), false, true, None, None)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_run_hook_retries_on_failure() {
+        let temp = tempdir().unwrap();
+        let mut session = HookSession::new(true, false);
+
+        // A hook that always fails should be retried and ultimately return an error
+        let err = session
+            .run_hook("exit 1", "test", temp.path(), false, true, None, None)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&format!("{MAX_HOOK_ATTEMPTS} attempt")),
+            "error should mention attempt count: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_run_hook_succeeds_without_retry() {
+        let temp = tempdir().unwrap();
+        let mut session = HookSession::new(true, false);
+
+        // A hook that succeeds on the first attempt should return Ok without retrying
+        session
+            .run_hook("exit 0", "test", temp.path(), false, true, None, None)
             .unwrap();
     }
 }

@@ -66,6 +66,8 @@ fn run(cli: Cli) -> error::Result<()> {
 
         Command::Status { diff } => commands::status::run(diff),
 
+        Command::Edit { entry } => commands::edit::run(&entry),
+
         Command::Encrypt { paths } => commands::encrypt::run_encrypt(&paths),
 
         Command::Decrypt { paths } => commands::encrypt::run_decrypt(&paths),

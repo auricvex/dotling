@@ -105,6 +105,16 @@ pub enum Command {
         diff: bool,
     },
 
+    /// Edit a tracked entry in your $EDITOR.
+    ///
+    /// For encrypted entries, dotling decrypts to a secure temp file, opens
+    /// your editor, then re-encrypts and writes back to the repo automatically.
+    /// For plain or template entries, the repo source file is opened directly.
+    Edit {
+        /// Source path, target path, or partial match of the entry to edit.
+        entry: String,
+    },
+
     /// Encrypt or decrypt tracked entries.
     Encrypt {
         /// Paths to encrypt.

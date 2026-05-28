@@ -14,7 +14,7 @@
 
 ---
 
-**dotling** v0.6.0 is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, templating, backups, hooks, and multi-OS support — so you can set up a new machine in seconds.
+**dotling** v0.6.1 is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, templating, backups, hooks, and multi-OS support — so you can set up a new machine in seconds.
 
 ## Features
 
@@ -101,6 +101,7 @@ git push
 | `dotling remove <entries>` | Undeploy, safely restore tracked files/folders recursively to their original target locations (decrypting if encrypted), and remove from tracking |
 | `dotling sync` | Bidirectional sync — push repo → actual and pull actual → repo |
 | `dotling status` | Show deployment status of all tracked entries |
+| `dotling edit <entry>` | Edit any tracked entry in `$EDITOR` — decrypts/re-encrypts automatically for encrypted entries |
 | `dotling encrypt <paths>` | Encrypt tracked entries using your Vault |
 | `dotling decrypt <paths>` | Decrypt encrypted entries back to plaintext |
 | `dotling vault <action>` | Manage your password-protected encryption Vault |
@@ -238,6 +239,18 @@ dotling includes a built-in portable encryption Vault protected by Argon2id and 
    dotling sync
    ```
 
+5. **Editing encrypted files:**
+   Use `dotling edit` to open an encrypted file in your `$EDITOR` without a manual decrypt/encrypt cycle:
+   ```sh
+   # Opens the decrypted content in $EDITOR, re-encrypts on save
+   dotling edit ~/.ssh/config
+
+   # Works with any tracked path: source path, target path, or partial name
+   dotling edit ssh/config
+   ```
+   After editing, run `dotling sync` to push the re-encrypted changes to your deployed file.
+   The editor is resolved in priority order: `$DOTLING_EDITOR` → `$VISUAL` → `$EDITOR` → `vim` → `nano`.
+
 ### Lifecycle Hooks
 
 dotling supports executing hooks (shell commands) globally or per-entry during the sync process. Hooks can be used for actions like reloading your shell, compiling configurations, or running custom setup scripts.
@@ -272,6 +285,9 @@ To protect against malicious code in imported dotfile repositories, dotling prom
 Selecting `always` stores the Blake2s-256 hash of the command string in `~/.dotling/state/trusted_hooks` so it runs seamlessly on subsequent syncs.
 - Pass `--allow-hooks` (or set `DOTLING_ALLOW_HOOKS=1`) to automatically execute all hooks without prompting.
 - Pass `--no-hooks` (or set `DOTLING_NO_HOOKS=1`) to completely disable hook execution.
+
+#### Hook Retry
+If a hook command exits with a non-zero status, dotling automatically retries it up to **3 times** before aborting the sync. A warning is printed after each failed attempt so the failure is always visible.
 
 ### Automated Backups & Conflict Resolution
 

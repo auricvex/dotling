@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1]
+
+- **feat**: `dotling edit` — Encrypted Template Editing
+  - Added `dotling edit <entry>` command to edit any tracked entry in `$EDITOR` without a manual decrypt/re-encrypt cycle.
+  - **Encrypted entries** — dotling decrypts the `.enc` source to a secure temporary file, launches the editor, then automatically re-encrypts the modified content back into the repo on save.
+  - **Plain, copy, and template entries** — the repo source file is opened directly.
+  - Entry lookup accepts a source path, target path, or partial match — the same flexible query as other commands.
+  - Editor is resolved in priority order: `$DOTLING_EDITOR` → `$VISUAL` → `$EDITOR` → `vim` → `nano`.
+  - Run `dotling sync` after editing to push re-encrypted changes out to the deployed target.
+- **fix**: Hook Retry Logic
+  - Hook commands that exit with a non-zero status are now automatically retried up to **3 attempts** before the sync is aborted.
+  - A warning is printed after each failed attempt with the attempt count so the failure is always visible.
+  - Error message on final failure now reports the total number of attempts made.
+  - Added unit tests (`test_run_hook_retries_on_failure`, `test_run_hook_succeeds_without_retry`) to verify retry behaviour.
+
 ## [0.6.0]
 
 - **feat**: Dotfile Templating (`dotling add --template`, `dotling vars`)
