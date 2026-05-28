@@ -139,11 +139,52 @@ pub fn run(
                     "would render (template): {} → {}",
                     entry.source, entry.target
                 ));
+                // Still report would-run hooks in dry-run mode.
+                if let Some(ref before) = entry.before {
+                    hook_session.run_hook(
+                        before,
+                        "entry_before",
+                        &repo_root,
+                        dry_run,
+                        no_interactive,
+                        Some(entry),
+                        Some("push"),
+                    )?;
+                }
+                if let Some(ref after) = entry.after {
+                    hook_session.run_hook(
+                        after,
+                        "entry_after",
+                        &repo_root,
+                        dry_run,
+                        no_interactive,
+                        Some(entry),
+                        Some("push"),
+                    )?;
+                }
                 skipped += 1;
                 continue;
             }
+
+            // ── Entry Before Hook (template) ───────────────────────
+            if let Some(ref before) = entry.before {
+                if let Err(e) = hook_session.run_hook(
+                    before,
+                    "entry_before",
+                    &repo_root,
+                    dry_run,
+                    no_interactive,
+                    Some(entry),
+                    Some("push"),
+                ) {
+                    ui::error(&format!("before hook for '{}' failed: {e}", entry.source));
+                    errors += 1;
+                    continue;
+                }
+            }
+
             let repo_root_str = repo_root.to_string_lossy().into_owned();
-            match sync_template_entry(
+            let template_result = sync_template_entry(
                 entry,
                 &repo_root,
                 &repo_root_str,
@@ -153,13 +194,34 @@ pub fn run(
                 &mut password_cache,
                 &mut fp_store,
                 &mut fp_dirty,
-            ) {
+            );
+
+            match template_result {
                 Ok(rendered) => {
                     if rendered {
                         ui::success(&format!("render {} → {}", entry.source, entry.target));
                         pushed += 1;
                     } else {
                         skipped += 1;
+                    }
+
+                    // ── Entry After Hook (template) ────────────────────
+                    if let Some(ref after) = entry.after {
+                        if let Err(e) = hook_session.run_hook(
+                            after,
+                            "entry_after",
+                            &repo_root,
+                            dry_run,
+                            no_interactive,
+                            Some(entry),
+                            Some("push"),
+                        ) {
+                            ui::error(&format!(
+                                "after hook for '{}' failed: {e}",
+                                entry.source
+                            ));
+                            errors += 1;
+                        }
                     }
                 }
                 Err(e) => {
