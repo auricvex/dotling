@@ -121,7 +121,7 @@ fn clone_repo(url: &str) -> Result<()> {
         dest.display(),
         config.entries.len()
     ));
-    ui::hint("run `dotling deploy` to set up symlinks");
+    ui::hint("run `dotling sync` to set up symlinks");
 
     Ok(())
 }

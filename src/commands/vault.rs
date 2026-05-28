@@ -72,7 +72,7 @@ pub fn run_import(path: &std::path::Path) -> Result<()> {
     crypto::vault::import_vault(path)?;
 
     ui::success("vault imported");
-    ui::hint("run `dotling deploy` to deploy your dotfiles");
+    ui::hint("run `dotling sync` to deploy your dotfiles");
 
     Ok(())
 }

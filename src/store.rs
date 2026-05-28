@@ -9,6 +9,9 @@ use crate::{
 };
 
 const STATE_FILE: &str = "state.toml";
+const FINGERPRINTS_FILE: &str = "fingerprints.toml";
+const BACKUPS_DIR: &str = "backups";
+const SNAPSHOTS_DIR: &str = "snapshots";
 
 /// Global state directory: `~/.dotling/`
 pub fn state_dir() -> Result<PathBuf> {
@@ -18,6 +21,29 @@ pub fn state_dir() -> Result<PathBuf> {
 /// Path to the global state file: `~/.dotling/state.toml`
 fn state_path() -> Result<PathBuf> {
     Ok(state_dir()?.join(STATE_FILE))
+}
+
+/// Path to the fingerprint store: `~/.dotling/fingerprints.toml`
+pub fn fingerprint_path() -> Result<PathBuf> {
+    Ok(state_dir()?.join(FINGERPRINTS_FILE))
+}
+
+/// Root directory for backup sessions: `~/.dotling/backups/`
+pub fn backup_dir() -> Result<PathBuf> {
+    Ok(state_dir()?.join(BACKUPS_DIR))
+}
+
+/// Root directory for plaintext snapshots: `~/.dotling/snapshots/`
+///
+/// Each file is stored at `<snapshot_dir>/<source>` where `source` is the
+/// repo-relative path of the entry (e.g. `shell/fish/config.fish`).
+pub fn snapshot_dir() -> Result<PathBuf> {
+    Ok(state_dir()?.join(SNAPSHOTS_DIR))
+}
+
+/// Full path for a plaintext snapshot of `source`.
+pub fn snapshot_path(source: &str) -> Result<PathBuf> {
+    Ok(snapshot_dir()?.join(source))
 }
 
 /// Get the currently registered repo root.

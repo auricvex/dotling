@@ -1,10 +1,13 @@
+mod backup;
 mod cli;
 mod commands;
 mod config;
 pub mod crypto;
 mod deploy;
 mod error;
+mod fingerprint;
 pub mod fs;
+mod merge;
 pub mod path;
 mod platform;
 mod store;
@@ -13,7 +16,7 @@ mod ui;
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli::{Cli, Command, VaultAction};
+use cli::{BackupAction, Cli, Command, VaultAction};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -43,7 +46,9 @@ fn run(cli: Cli) -> error::Result<()> {
             dry_run,
             force,
             prefer_actual,
-        } => commands::sync::run(dry_run, force, prefer_actual),
+            no_interactive,
+            backup,
+        } => commands::sync::run(dry_run, force, prefer_actual, no_interactive, backup),
 
         Command::Status { diff } => commands::status::run(diff),
 
@@ -60,5 +65,13 @@ fn run(cli: Cli) -> error::Result<()> {
         },
 
         Command::Doctor => commands::doctor::run(),
+
+        Command::Backup { action } => match action {
+            BackupAction::List => commands::backup::run_list(),
+            BackupAction::Clean {
+                keep_last,
+                older_than,
+            } => commands::backup::run_clean(keep_last, older_than),
+        },
     }
 }

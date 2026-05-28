@@ -58,19 +58,31 @@ pub enum Command {
     ///
     /// Pushes (repo → actual) entries that are missing or outdated,
     /// and pulls (actual → repo) copy-mode entries that were modified locally.
+    /// When both sides differ, the user is prompted for resolution.
     Sync {
         /// Show what would change without modifying anything.
         #[arg(long)]
         dry_run: bool,
 
-        /// Overwrite conflicting files.
+        /// Overwrite conflicting files without prompting (repo wins; local files
+        /// are backed up automatically).
         #[arg(long)]
         force: bool,
 
-        /// When both sides differ and timestamps are equal, prefer the actual
-        /// file over the repo (pull direction). Default is to prefer the repo.
-        #[arg(long)]
+        /// When both sides differ, prefer the actual (local) file over the repo
+        /// without prompting.  Equivalent to always answering [k]eep-local.
+        #[arg(long, alias = "prefer-local")]
         prefer_actual: bool,
+
+        /// Do not prompt for conflict resolution; skip conflicting entries and
+        /// print a warning.  Useful in non-interactive environments (CI, scripts).
+        #[arg(long)]
+        no_interactive: bool,
+
+        /// Always back up the local file before any push that would overwrite it,
+        /// even when there is no conflict.
+        #[arg(long)]
+        backup: bool,
     },
 
     /// Show status of all tracked entries.
@@ -102,6 +114,12 @@ pub enum Command {
 
     /// Audit repository health and report issues.
     Doctor,
+
+    /// Manage local file backups created by dotling before overwriting.
+    Backup {
+        #[command(subcommand)]
+        action: BackupAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -127,4 +145,25 @@ pub enum VaultAction {
     /// Change the vault password.
     #[command(name = "change-password")]
     ChangePassword,
+}
+
+#[derive(Subcommand)]
+pub enum BackupAction {
+    /// List all backup sessions.
+    List,
+
+    /// Remove old backup sessions.
+    ///
+    /// By default keeps the 10 most recent sessions.
+    /// At least one of --keep-last or --older-than must be supplied,
+    /// or the default of --keep-last 10 is used.
+    Clean {
+        /// Keep only the N most recent backup sessions.
+        #[arg(long, value_name = "N")]
+        keep_last: Option<usize>,
+
+        /// Delete backup sessions older than D days.
+        #[arg(long, value_name = "DAYS")]
+        older_than: Option<u64>,
+    },
 }
