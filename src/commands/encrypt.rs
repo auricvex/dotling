@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use crate::{
     config::Config,
@@ -27,11 +27,31 @@ pub fn run_encrypt(paths: &[String]) -> Result<()> {
                 let source_path = repo_root.join(&entry.source);
 
                 if entry.directory {
-                    ui::error(&format!(
-                        "`{}` is a directory; cannot encrypt entire directories",
-                        entry.source
-                    ));
-                    errors += 1;
+                    // Encrypt every file inside the directory
+                    if !source_path.exists() {
+                        ui::error(&format!(
+                            "source directory `{}` not found in repo",
+                            source_path.display()
+                        ));
+                        errors += 1;
+                        continue;
+                    }
+
+                    match encrypt_directory(&source_path, &master_key) {
+                        Ok(n) => {
+                            entry.encrypted = true;
+                            ui::success(&format!(
+                                "encrypted `{}` ({n} file{})",
+                                entry.source,
+                                if n == 1 { "" } else { "s" }
+                            ));
+                            encrypted_count += 1;
+                        }
+                        Err(e) => {
+                            ui::error(&format!("failed to encrypt `{}`: {e}", entry.source));
+                            errors += 1;
+                        }
+                    }
                     continue;
                 }
 
@@ -92,11 +112,32 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
             }
             Some(entry) => {
                 if entry.directory {
-                    ui::error(&format!(
-                        "`{}` is a directory; cannot decrypt entire directories",
-                        entry.source
-                    ));
-                    errors += 1;
+                    // Decrypt every .enc file inside the directory
+                    let source_path = repo_root.join(&entry.source);
+                    if !source_path.exists() {
+                        ui::error(&format!(
+                            "source directory `{}` not found in repo",
+                            source_path.display()
+                        ));
+                        errors += 1;
+                        continue;
+                    }
+
+                    match decrypt_directory(&source_path, &master_key) {
+                        Ok(n) => {
+                            entry.encrypted = false;
+                            ui::success(&format!(
+                                "decrypted `{}` ({n} file{})",
+                                entry.source,
+                                if n == 1 { "" } else { "s" }
+                            ));
+                            decrypted_count += 1;
+                        }
+                        Err(e) => {
+                            ui::error(&format!("failed to decrypt `{}`: {e}", entry.source));
+                            errors += 1;
+                        }
+                    }
                     continue;
                 }
 
@@ -138,4 +179,69 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
     ui::summary(decrypted_count, 0, errors);
 
     Ok(())
+}
+
+// ── Directory helpers ─────────────────────────────────────────────
+
+/// Recursively encrypt all plaintext files in a directory.
+///
+/// Each file `foo` becomes `foo.enc`; the original is removed.
+/// Already-encrypted `.enc` files are skipped.
+/// Returns the number of files encrypted.
+fn encrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
+    let mut count = 0usize;
+    for entry in fs::read_dir(dir).map_err(|e| Error::io(dir, "read directory", e))? {
+        let entry = entry.map_err(|e| Error::io(dir, "read directory entry", e))?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            count += encrypt_directory(&path, key)?;
+        } else {
+            // Skip files that are already encrypted
+            if path.extension().and_then(|e| e.to_str()) == Some("enc") {
+                continue;
+            }
+
+            let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
+            let encrypted = crate::crypto::encrypt_with_key(&content, key)?;
+
+            let enc_path = path.with_extension(
+                match path.extension().and_then(|e| e.to_str()) {
+                    Some(ext) => format!("{ext}.enc"),
+                    None => "enc".to_string(),
+                },
+            );
+            crate::fs::atomic_write(&enc_path, &encrypted)?;
+            fs::remove_file(&path).map_err(|e| Error::io(&path, "remove plaintext", e))?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Recursively decrypt all `.enc` files in a directory.
+///
+/// Each `foo.enc` is decrypted back to `foo`; the `.enc` file is removed.
+/// Returns the number of files decrypted.
+fn decrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
+    let mut count = 0usize;
+    for entry in fs::read_dir(dir).map_err(|e| Error::io(dir, "read directory", e))? {
+        let entry = entry.map_err(|e| Error::io(dir, "read directory entry", e))?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            count += decrypt_directory(&path, key)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some("enc") {
+            let encrypted = fs::read(&path).map_err(|e| Error::io(&path, "read encrypted", e))?;
+            let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
+
+            // Strip the `.enc` extension to get the original path
+            let original_path = path.with_extension("");
+            // Handle double extensions like `foo.conf.enc` → `foo.conf`
+            crate::fs::atomic_write(&original_path, &plaintext)?;
+            fs::remove_file(&path).map_err(|e| Error::io(&path, "remove encrypted", e))?;
+            count += 1;
+        }
+    }
+    Ok(count)
 }
