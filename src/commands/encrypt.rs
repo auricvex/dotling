@@ -69,7 +69,13 @@ pub fn run_encrypt(paths: &[String]) -> Result<()> {
                     fs::read(&source_path).map_err(|e| Error::io(&source_path, "read", e))?;
 
                 let encrypted = crate::crypto::encrypt_with_key(&content, &master_key)?;
-                let enc_path = repo_root.join(format!("{}.enc", entry.source));
+                // For template entries the .enc is already part of entry.source
+                // (e.g. "shell/gitconfig.dtmpl.enc"); for plain files we append it.
+                let enc_path = if entry.template {
+                    repo_root.join(&entry.source)
+                } else {
+                    repo_root.join(format!("{}.enc", entry.source))
+                };
                 crate::fs::atomic_write(&enc_path, &encrypted)?;
 
                 // Remove plaintext from repo
@@ -141,7 +147,13 @@ pub fn run_decrypt(paths: &[String]) -> Result<()> {
                     continue;
                 }
 
-                let enc_path = repo_root.join(format!("{}.enc", entry.source));
+                // For template entries the .enc is already part of entry.source
+                // (e.g. "shell/gitconfig.dtmpl.enc"); for plain files we append it.
+                let enc_path = if entry.template {
+                    repo_root.join(&entry.source)
+                } else {
+                    repo_root.join(format!("{}.enc", entry.source))
+                };
 
                 if !enc_path.exists() {
                     ui::error(&format!(

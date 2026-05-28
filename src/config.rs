@@ -408,9 +408,9 @@ impl EntryBuilder {
             encrypted: self.encrypted,
             directory: self.directory,
             // Infer template from the .dtmpl suffix — never stored in TOML.
-            template: std::path::Path::new(&source)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("dtmpl")),
+            // A source can be "foo.dtmpl" (plain) or "foo.dtmpl.enc" (encrypted),
+            // so we must check whether *any* component ends with ".dtmpl".
+            template: source.ends_with(".dtmpl") || source.ends_with(".dtmpl.enc"),
             os: self.os,
             permissions: self.permissions,
             before: self.before,

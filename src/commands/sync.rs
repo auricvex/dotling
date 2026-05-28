@@ -662,6 +662,10 @@ fn resolve_encrypted_action(
 ) -> SyncAction {
     let enc_path = if entry.directory {
         repo_root.join(&entry.source)
+    } else if entry.template {
+        // For encrypted templates the .enc suffix is already baked into entry.source
+        // (e.g. "shell/gitconfig.dtmpl.enc") — do NOT append another .enc.
+        repo_root.join(&entry.source)
     } else {
         repo_root.join(format!("{}.enc", entry.source))
     };
@@ -759,7 +763,13 @@ fn pull_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Result<()>
         let repo_dir = repo_root.join(&entry.source);
         pull_encrypted_directory(&target, &repo_dir, entry, password)?;
     } else {
-        let enc_path = repo_root.join(format!("{}.enc", entry.source));
+        // For encrypted templates the .enc suffix is already part of entry.source
+        // (e.g. "shell/gitconfig.dtmpl.enc"); for plain encrypted files we append it.
+        let enc_path = if entry.template {
+            repo_root.join(&entry.source)
+        } else {
+            repo_root.join(format!("{}.enc", entry.source))
+        };
         let plaintext = fs::read(&target).map_err(|e| Error::io(&target, "read target", e))?;
         let master_key = crate::crypto::vault::unlock_vault(password)?;
         let encrypted = crate::crypto::encrypt_with_key(&plaintext, &master_key)?;

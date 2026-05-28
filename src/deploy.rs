@@ -181,7 +181,13 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
         }
         deploy_encrypted_directory(&source, &target, &master_key)?;
     } else {
-        let source = repo_root.join(format!("{}.enc", entry.source));
+        // For encrypted templates the .enc suffix is already part of entry.source
+        // (e.g. "shell/gitconfig.dtmpl.enc"); for plain encrypted files we append it.
+        let source = if entry.template {
+            repo_root.join(&entry.source)
+        } else {
+            repo_root.join(format!("{}.enc", entry.source))
+        };
         if !source.exists() {
             return Err(Error::Deploy {
                 entry: entry.source.clone(),
