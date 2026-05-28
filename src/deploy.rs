@@ -27,7 +27,7 @@ pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod
         return EntryState::Missing;
     };
 
-    let source = if entry.encrypted {
+    let source = if entry.encrypted && !entry.directory {
         repo_root.join(format!("{}.enc", entry.source))
     } else {
         repo_root.join(&entry.source)
@@ -145,25 +145,34 @@ pub fn deploy_entry(
 /// password, and writes the plaintext to the target.
 pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Result<()> {
     let target = crate::path::expand_tilde(std::path::Path::new(&entry.target))?;
-    let source = repo_root.join(format!("{}.enc", entry.source));
-
-    if !source.exists() {
-        return Err(Error::Deploy {
-            entry: entry.source.clone(),
-            message: format!("encrypted source `{}` not found", source.display()),
-        });
-    }
-
-    let encrypted = fs::read(&source).map_err(|e| Error::io(&source, "read encrypted file", e))?;
     let master_key = crate::crypto::vault::unlock_vault(password)?;
-    let plaintext = crate::crypto::decrypt_with_key(&encrypted, &master_key)?;
 
-    crate::fs::atomic_write(&target, &plaintext)?;
+    if entry.directory {
+        let source = repo_root.join(&entry.source);
+        if !source.exists() {
+            return Err(Error::Deploy {
+                entry: entry.source.clone(),
+                message: format!("encrypted source directory `{}` not found", source.display()),
+            });
+        }
+        deploy_encrypted_directory(&source, &target, &master_key)?;
+    } else {
+        let source = repo_root.join(format!("{}.enc", entry.source));
+        if !source.exists() {
+            return Err(Error::Deploy {
+                entry: entry.source.clone(),
+                message: format!("encrypted source `{}` not found", source.display()),
+            });
+        }
+        let encrypted = fs::read(&source).map_err(|e| Error::io(&source, "read encrypted file", e))?;
+        let plaintext = crate::crypto::decrypt_with_key(&encrypted, &master_key)?;
+        crate::fs::atomic_write(&target, &plaintext)?;
+    }
 
     // Set restrictive permissions on decrypted files (Unix)
     if let Some(perms) = entry.permissions {
         crate::fs::set_permissions(&target, perms)?;
-    } else {
+    } else if !entry.directory {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -176,22 +185,37 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
     Ok(())
 }
 
-/// Undeploy an entry (remove the deployed file/symlink).
-pub fn undeploy_entry(entry: &Entry) -> Result<()> {
-    let target = crate::path::expand_tilde(std::path::Path::new(&entry.target))?;
+fn deploy_encrypted_directory(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<()> {
+    fs::create_dir_all(dst).map_err(|e| Error::io(dst, "create directory", e))?;
 
-    if !target.exists() && !crate::fs::is_symlink(&target) {
-        return Ok(()); // Nothing to undeploy
+    for entry in fs::read_dir(src).map_err(|e| Error::io(src, "read directory", e))? {
+        let entry = entry.map_err(|e| Error::io(src, "read directory entry", e))?;
+        let src_path = entry.path();
+        let file_name = entry.file_name();
+
+        if src_path.is_dir() {
+            let dst_path = dst.join(&file_name);
+            deploy_encrypted_directory(&src_path, &dst_path, key)?;
+        } else if src_path.extension().and_then(|e| e.to_str()) == Some("enc") {
+            let encrypted =
+                fs::read(&src_path).map_err(|e| Error::io(&src_path, "read encrypted file", e))?;
+            let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
+
+            let dst_name = Path::new(&file_name).with_extension("");
+            let dst_path = dst.join(dst_name);
+            crate::fs::atomic_write(&dst_path, &plaintext)?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o600);
+                fs::set_permissions(&dst_path, perms).ok();
+            }
+        } else {
+            let dst_path = dst.join(&file_name);
+            crate::fs::copy_file(&src_path, &dst_path)?;
+        }
     }
-
-    if crate::fs::is_symlink(&target) {
-        crate::fs::remove_symlink(&target)?;
-    } else if target.is_dir() {
-        fs::remove_dir_all(&target).map_err(|e| Error::io(&target, "remove directory", e))?;
-    } else {
-        fs::remove_file(&target).map_err(|e| Error::io(&target, "remove file", e))?;
-    }
-
     Ok(())
 }
 

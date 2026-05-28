@@ -123,12 +123,38 @@ impl Status {
     }
 }
 
-/// Print a status line for an entry.
-pub fn status_line(status: &Status, source: &str, target: &str) {
+/// Sync and diff state badges shown alongside each status line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncBadge {
+    /// Entry is fully in sync — no action needed.
+    InSync,
+    /// Entry needs to be synced (missing, broken, conflict, or symlink wrong).
+    NeedsSync,
+    /// Entry content differs between repo and actual (copy-mode modified).
+    HasDiff,
+}
+
+impl SyncBadge {
+    fn render(self) -> String {
+        match self {
+            Self::InSync => paint(GREEN, "[in sync]"),
+            Self::NeedsSync => paint(YELLOW, "[needs sync]"),
+            Self::HasDiff => format!(
+                "{} {}",
+                paint(YELLOW, "[needs sync]"),
+                paint(MAGENTA, "[diff]")
+            ),
+        }
+    }
+}
+
+/// Print a status line for an entry, with an optional sync badge.
+pub fn status_line(status: &Status, source: &str, target: &str, badge: SyncBadge) {
     let sym = paint(status.color(), status.symbol());
     let src = paint(CYAN, source);
     let arrow = paint(DIM, "→");
-    println!("  {sym} {src} {arrow} {target}");
+    let badge_str = badge.render();
+    println!("  {sym} {src} {arrow} {target}  {badge_str}");
 }
 
 // ── Summaries ─────────────────────────────────────────────────────
@@ -274,4 +300,88 @@ pub fn print_diff(source_label: &str, target_label: &str, source: &str, target: 
             (None, None) => {}
         }
     }
+}
+
+// ── Conflict resolution UI ────────────────────────────────────────
+
+/// Print a conflict header for a single entry.
+///
+/// `origin_label` should be a short human-readable string like
+/// `"first-seen"`, `"both-modified"`, or `"ambiguous timestamp"`.
+pub fn conflict_header(origin_label: &str, source: &str, target: &str) {
+    println!("\n  {} conflict ({origin_label}):", paint(MAGENTA, "⚡"));
+    println!("    {} {} {}", paint(CYAN, source), paint(DIM, "↔"), target);
+}
+
+/// The user's response to a conflict resolution prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictChoice {
+    /// Keep the local (actual) file — pull it into the repo.
+    KeepLocal,
+    /// Use the repo version — push to actual (local file will be backed up).
+    UseRepo,
+    /// Attempt an automatic 3-way merge (only for plain-text files).
+    Merge,
+    /// Skip this entry for now; leave both sides unchanged.
+    Skip,
+    /// Show a diff between repo and actual before deciding.
+    ShowDiff,
+}
+
+/// Interactive conflict resolution prompt.
+///
+/// Returns the user's choice.  If stdin is not a TTY (e.g. piped), defaults
+/// to `Skip`.
+pub fn conflict_prompt(supports_merge: bool) -> ConflictChoice {
+    let merge_hint = if supports_merge { " [m]erge" } else { "" };
+    loop {
+        print!(
+            "    {} [k]eep local  [r]epo (backup){merge_hint}  [d]iff  [s]kip > ",
+            paint(YELLOW, "?"),
+        );
+        io::stdout().flush().ok();
+
+        let mut input = String::new();
+        if io::stdin().lock().read_line(&mut input).is_err() || input.is_empty() {
+            return ConflictChoice::Skip;
+        }
+
+        match input.trim().to_ascii_lowercase().as_str() {
+            "k" | "keep" | "keep-local" | "keeplocal" => return ConflictChoice::KeepLocal,
+            "r" | "repo" => return ConflictChoice::UseRepo,
+            "m" | "merge" if supports_merge => return ConflictChoice::Merge,
+            "d" | "diff" => return ConflictChoice::ShowDiff,
+            "s" | "skip" | "" => return ConflictChoice::Skip,
+            _ => {
+                println!("    {}", paint(DIM, "unrecognised — type k, r, m, d, or s"));
+            }
+        }
+    }
+}
+
+/// Print a notice that a backup was made before overwriting.
+pub fn backup_notice(backup_path: &std::path::Path) {
+    println!(
+        "    {} backed up to {}",
+        paint(DIM, "↩"),
+        paint(DIM, &backup_path.display().to_string()),
+    );
+}
+
+/// Print a notice that a 3-way merge succeeded with conflict markers.
+pub fn merge_conflict_notice(conflict_count: usize, path: &std::path::Path) {
+    println!(
+        "    {} {conflict_count} conflict hunk(s) need manual resolution in {}",
+        paint(YELLOW, "⚠"),
+        paint(CYAN, &path.display().to_string()),
+    );
+}
+
+/// Print a notice that a 3-way merge was clean (no conflict markers).
+pub fn merge_clean_notice(path: &std::path::Path) {
+    println!(
+        "    {} merged cleanly → {}",
+        paint(GREEN, "✓"),
+        paint(CYAN, &path.display().to_string()),
+    );
 }

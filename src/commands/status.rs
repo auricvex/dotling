@@ -1,6 +1,8 @@
-use std::fs;
+use std::{fs, path::Path};
 
-use crate::{config::Config, error::Result, platform, store, ui};
+use ui::SyncBadge;
+
+use crate::{config::Config, error::Result, fingerprint::FingerprintStore, platform, store, ui};
 
 /// Show status of all tracked entries.
 #[allow(clippy::too_many_lines)]
@@ -18,6 +20,12 @@ pub fn run(show_diff: bool) -> Result<()> {
     let mut ok_count = 0usize;
     let mut warning_count = 0usize;
     let mut error_count = 0usize;
+
+    // Load the fingerprint store for encrypted entry sync-state checks.
+    let fp_store = store::fingerprint_path().map_or_else(
+        |_| FingerprintStore::load(std::path::PathBuf::new()),
+        FingerprintStore::load,
+    );
 
     ui::header("Tracked entries");
 
@@ -49,6 +57,7 @@ pub fn run(show_diff: bool) -> Result<()> {
                     &status,
                     &entry.source,
                     &format!("{}{}", entry.target, suffix),
+                    SyncBadge::InSync,
                 );
                 ok_count += 1;
                 continue;
@@ -56,34 +65,59 @@ pub fn run(show_diff: bool) -> Result<()> {
 
             let state = crate::deploy::check_state(entry, &repo_root, config.settings.method);
 
-            let status = match state {
+            let (status, badge) = match state {
                 crate::deploy::EntryState::Deployed => {
                     ok_count += 1;
                     if entry.encrypted {
-                        ui::Status::Encrypted
+                        let enc_path = if entry.directory {
+                            repo_root.join(&entry.source)
+                        } else {
+                            repo_root.join(format!("{}.enc", entry.source))
+                        };
+                        let badge = match crate::path::expand_tilde(Path::new(&entry.target)) {
+                            Ok(target_path) => {
+                                match fp_store.is_in_sync(&entry.source, &enc_path, &target_path) {
+                                    Some(true) => SyncBadge::InSync,
+                                    Some(false) => {
+                                        // Counts as a warning — something drifted.
+                                        warning_count += 1;
+                                        ok_count -= 1;
+                                        SyncBadge::NeedsSync
+                                    }
+                                    None => {
+                                        // Never synced via dotling — conservative.
+                                        warning_count += 1;
+                                        ok_count -= 1;
+                                        SyncBadge::NeedsSync
+                                    }
+                                }
+                            }
+                            Err(_) => SyncBadge::InSync,
+                        };
+                        (ui::Status::Encrypted, badge)
                     } else {
-                        ui::Status::Ok
+                        (ui::Status::Ok, SyncBadge::InSync)
                     }
                 }
                 crate::deploy::EntryState::Modified => {
                     warning_count += 1;
-                    ui::Status::Modified
+                    (ui::Status::Modified, SyncBadge::HasDiff)
                 }
                 crate::deploy::EntryState::Missing => {
                     error_count += 1;
-                    ui::Status::Missing
+                    (ui::Status::Missing, SyncBadge::NeedsSync)
                 }
                 crate::deploy::EntryState::Broken => {
                     error_count += 1;
-                    ui::Status::Broken
+                    (ui::Status::Broken, SyncBadge::NeedsSync)
                 }
                 crate::deploy::EntryState::Conflict => {
                     warning_count += 1;
-                    ui::Status::Conflict
+                    (ui::Status::Conflict, SyncBadge::NeedsSync)
                 }
             };
 
-            ui::status_line(&status, &entry.source, &entry.target);
+            ui::status_line(&status, &entry.source, &entry.target, badge);
 
             // Show diff for modified entries if requested
             if show_diff && state == crate::deploy::EntryState::Modified {

@@ -34,7 +34,7 @@ pub fn run() -> Result<()> {
                         let state =
                             crate::deploy::check_state(entry, &repo_root, config.settings.method);
 
-                        let source_path = if entry.encrypted {
+                        let source_path = if entry.encrypted && !entry.directory {
                             repo_root.join(format!("{}.enc", entry.source))
                         } else {
                             repo_root.join(&entry.source)
