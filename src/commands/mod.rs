@@ -1,6 +1,7 @@
 pub mod add;
 pub mod backup;
 pub mod doctor;
+pub mod edit;
 pub mod encrypt;
 pub mod init;
 pub mod remove;
