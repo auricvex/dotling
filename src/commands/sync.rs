@@ -26,6 +26,7 @@ enum SyncAction {
 // ── Public entry point ────────────────────────────────────────────
 
 /// Synchronise all tracked entries in both directions.
+#[allow(clippy::too_many_lines)]
 pub fn run(dry_run: bool, force: bool, prefer_actual: bool) -> Result<()> {
     let repo_root = store::require_repo_root()?;
     let config_path = store::config_path(&repo_root);
@@ -155,8 +156,7 @@ fn resolve_action(
     match method {
         DeployMethod::Symlink if !entry.encrypted => {
             // Symlinks are always repo-authoritative.
-            let state =
-                crate::deploy::check_state(entry, repo_root, default_method);
+            let state = crate::deploy::check_state(entry, repo_root, default_method);
             match state {
                 EntryState::Deployed => SyncAction::Ok,
                 _ => SyncAction::FixSymlink,
@@ -196,16 +196,12 @@ fn resolve_copy_action(
                     match (source.metadata(), target.metadata()) {
                         (Ok(sm), Ok(tm)) => {
                             match (sm.modified(), tm.modified()) {
-                                (Ok(st), Ok(tt)) => {
-                                    if tt > st {
-                                        SyncAction::Pull
-                                    } else if st > tt {
-                                        SyncAction::Push
-                                    } else {
-                                        // Exact same mtime but different content → conflict.
-                                        SyncAction::Conflict
-                                    }
-                                }
+                                (Ok(st), Ok(tt)) => match tt.cmp(&st) {
+                                    std::cmp::Ordering::Greater => SyncAction::Pull,
+                                    std::cmp::Ordering::Less => SyncAction::Push,
+                                    // Exact same mtime but different content → conflict.
+                                    std::cmp::Ordering::Equal => SyncAction::Conflict,
+                                },
                                 _ => SyncAction::Conflict,
                             }
                         }
@@ -234,24 +230,20 @@ fn resolve_encrypted_action(
 
     match (enc_exists, target_exists) {
         (false, false) => SyncAction::Ok,
-        (true, false) => SyncAction::Push,   // deploy (decrypt) needed
-        (false, true) => SyncAction::Pull,   // encrypt and store
+        (true, false) => SyncAction::Push, // deploy (decrypt) needed
+        (false, true) => SyncAction::Pull, // encrypt and store
         (true, true) => {
             // Both exist — use modification times to guess direction.
             // (Full comparison requires the password, which we don't have here.)
             match (enc_path.metadata(), target.metadata()) {
                 (Ok(em), Ok(tm)) => {
                     match (em.modified(), tm.modified()) {
-                        (Ok(et), Ok(tt)) => {
-                            if tt > et {
-                                SyncAction::Pull
-                            } else if et > tt {
-                                SyncAction::Push
-                            } else {
-                                // Same mtime → assume in sync.
-                                SyncAction::Ok
-                            }
-                        }
+                        (Ok(et), Ok(tt)) => match tt.cmp(&et) {
+                            std::cmp::Ordering::Greater => SyncAction::Pull,
+                            std::cmp::Ordering::Less => SyncAction::Push,
+                            // Same mtime → assume in sync.
+                            std::cmp::Ordering::Equal => SyncAction::Ok,
+                        },
                         _ => SyncAction::Push, // fallback: push
                     }
                 }
@@ -304,7 +296,12 @@ fn pull_encrypted(entry: &Entry, repo_root: &std::path::Path, password: &str) ->
     }
 
     if entry.directory {
-        pull_encrypted_directory(&target, &enc_path.parent().unwrap_or(repo_root), entry, password)?;
+        pull_encrypted_directory(
+            &target,
+            enc_path.parent().unwrap_or(repo_root),
+            entry,
+            password,
+        )?;
     } else {
         let plaintext = fs::read(&target).map_err(|e| Error::io(&target, "read target", e))?;
         let master_key = crate::crypto::vault::unlock_vault(password)?;
@@ -335,6 +332,7 @@ fn pull_directory(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
 }
 
 /// Recursively pull an encrypted directory: encrypt each file from target → repo.
+#[allow(clippy::only_used_in_recursion)]
 fn pull_encrypted_directory(
     target_dir: &std::path::Path,
     repo_dir: &std::path::Path,
@@ -348,8 +346,7 @@ fn pull_encrypted_directory(
     for dir_entry in
         fs::read_dir(target_dir).map_err(|e| Error::io(target_dir, "read directory", e))?
     {
-        let dir_entry =
-            dir_entry.map_err(|e| Error::io(target_dir, "read directory entry", e))?;
+        let dir_entry = dir_entry.map_err(|e| Error::io(target_dir, "read directory entry", e))?;
         let src_path = dir_entry.path();
         let file_name = dir_entry.file_name();
 
@@ -361,10 +358,7 @@ fn pull_encrypted_directory(
             let encrypted = crate::crypto::encrypt_with_key(&plaintext, &master_key)?;
 
             // Write as <filename>.enc
-            let enc_name = format!(
-                "{}.enc",
-                file_name.to_string_lossy()
-            );
+            let enc_name = format!("{}.enc", file_name.to_string_lossy());
             let enc_path = repo_dir.join(enc_name);
             crate::fs::atomic_write(&enc_path, &encrypted)?;
         }
