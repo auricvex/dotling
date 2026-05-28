@@ -14,7 +14,7 @@
 
 ---
 
-**dotling** v0.5.0 is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, backups, hooks, and multi-OS support — so you can set up a new machine in seconds.
+**dotling** v0.6.0 is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, templating, backups, hooks, and multi-OS support — so you can set up a new machine in seconds.
 
 ## Features
 
@@ -26,6 +26,7 @@
 - **Encrypted sync** — sync handles encrypted entries in both directions; modified plaintext is re-encrypted back into the repo automatically
 - **Portable Secrets** — export your vault to easily unlock secrets on a new machine
 - **Native Git integration** — dotling manages the symlinks, you manage the repo with native `git` commands
+- **Dotfile Templating** — add machine-specific values (`hostname`, `username`, custom vars) to any dotfile using `{{ var.key }}` syntax; render on every sync via `~/.dotling/vars.toml`
 - **Health checks** — `dotling doctor` audits broken links, orphaned entries, and repo issues
 - **Conflict-safe** — refuses to overwrite unmanaged files without explicit confirmation
 - **Automated Backups** — protects local files from accidental overwrites by saving them to chronological backup sessions
@@ -104,6 +105,7 @@ git push
 | `dotling decrypt <paths>` | Decrypt encrypted entries back to plaintext |
 | `dotling vault <action>` | Manage your password-protected encryption Vault |
 | `dotling doctor` | Audit repository health and report issues |
+| `dotling vars <action>` | Manage machine-local template variables |
 | `dotling backup <action>` | Manage local file backups created by dotling before overwriting |
 
 ### Key Flags
@@ -113,6 +115,7 @@ git push
 | `all` | `-v, --verbose` | Show hints and additional details |
 | `add` | `--copy` | Deploy as a copy instead of a symlink |
 | `add` | `--encrypt` | Encrypt the file(s) using the vault password |
+| `add` | `--template` | Track as a template (`.dtmpl`): rendered on each sync with machine-local variables |
 | `add` | `--os <platform>` | Target OS: `all`, `linux`, `macos`, `windows` |
 | `sync` | `--dry-run` | Preview changes without modifying anything |
 | `sync` | `--force` | Overwrite conflicting files (repo wins; local backups created automatically) |
@@ -301,6 +304,94 @@ Previously, encrypted entries had to be decrypted to verify their sync state. do
 - On subsequent `status` or `sync` checks, dotling compares current file hashes against the stored fingerprint.
 - **Benefits:** You can run `dotling status` or `dotling sync --dry-run` to audit your system instantly, without entering your vault password. A password is only requested when actual file modifications need to be decrypted or re-encrypted!
 - For copy-mode plain files, fingerprints track both repo source and target file hashes, enabling deterministic detection of which side has changed (`who_changed()`).
+
+### Dotfile Templating
+
+Some dotfiles contain machine-specific values — a hostname in a Nix flake, a username in a config, a path that differs per machine. dotling v0.6.0 introduces opt-in templating to handle this cleanly.
+
+#### How it works
+
+Any file tracked with `--template` is stored in the repo as `<name>.dtmpl`. On every `sync`, dotling renders the template and writes the output to the deploy target — the repo source is never deployed directly.
+
+```sh
+# 1. Set your machine-local variables (saved to ~/.dotling/vars.toml, never committed)
+dotling vars set hostname "Macbook-Air-Ade"
+dotling vars set primary_user "ade"
+
+# 2. Add a file as a template
+dotling add ~/.config/nix-darwin/flake.nix --template
+
+# 3. On another machine, sync will detect missing vars and prompt for them
+dotling sync
+```
+
+#### Template syntax
+
+```nix
+# ~/.config/nix-darwin/flake.nix.dtmpl
+darwinConfigurations = {
+  {{ var.hostname }} = darwin.lib.darwinSystem { ... };
+};
+```
+
+```toml
+# ~/.config/nix-darwin/configuration.nix.dtmpl
+system.primaryUser = "{{ var.primary_user }}";
+```
+
+| Expression | Description |
+|---|---|
+| `{{ var.key }}` | User-defined variable (local or config default) |
+| `{{ dotling.hostname }}` | Current machine hostname |
+| `{{ dotling.username }}` | Current OS username |
+| `{{ dotling.os }}` | `macos`, `linux`, or `windows` |
+| `{{ dotling.arch }}` | `x86_64` or `aarch64` |
+| `{{ dotling.home }}` | Home directory path |
+| `{{ dotling.repo }}` | Dotfiles repo root path |
+| `{{ env.VAR }}` | Environment variable |
+| `{{ var.key \| upper }}` | Apply a filter (`upper`, `lower`, `trim`, `quote`, `squote`) |
+| `{{ var.key \| default "fallback" }}` | Use a fallback if the variable is not set |
+| `{{- expr -}}` | Strip surrounding whitespace |
+
+#### Variable sources
+
+Variables are resolved in priority order:
+
+1. **Local store** — `~/.dotling/vars.toml` (machine-specific, never committed)
+2. **Config defaults** — `[vars]` in `dotling.toml` (shared, committed)
+3. **Built-ins** — `dotling.*` (auto-populated from the machine)
+4. **Environment** — `env.*` (current process environment)
+
+Shared defaults in `dotling.toml` act as documentation and fallbacks — use placeholders, not real values:
+
+```toml
+# dotling.toml
+[vars]
+hostname = "my-mac"       # placeholder — override in ~/.dotling/vars.toml
+primary_user = "user"     # placeholder
+```
+
+#### Encrypted templates
+
+Sensitive templates (e.g. a config containing tokens) can be both templated and encrypted:
+
+```sh
+dotling add ~/.config/secret.conf --template --encrypt
+```
+
+The pipeline on sync is: `vault decrypt → render with vars → deploy`.
+
+#### `dotling vars` reference
+
+```sh
+dotling vars list                    # show all resolved variables
+dotling vars set hostname "my-mac"   # set a machine-local variable
+dotling vars get hostname            # print the resolved value
+dotling vars unset hostname          # remove from local store
+dotling vars check                   # validate all templates
+dotling vars import ~/.env           # bulk-import from .env or TOML
+dotling vars export                  # print as TOML (for new machines)
+```
 
 ## Contributing
 

@@ -7,10 +7,28 @@ use crate::{
     config::{Config, DeployMethod, Entry},
     error::{Error, Result},
     path, store, ui,
+    vars::VarStore,
 };
 
 /// Add files or directories to dotling tracking.
-pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Result<()> {
+#[allow(clippy::fn_params_excessive_bools)]
+pub fn run(
+    paths: &[PathBuf],
+    encrypt: bool,
+    copy: bool,
+    template: bool,
+    os: Option<&str>,
+) -> Result<()> {
+    // Directories cannot be templates.
+    let has_dir = paths
+        .iter()
+        .any(|p| path::resolve(p).is_ok_and(|r| r.is_dir()));
+    if template && has_dir {
+        return Err(Error::User(
+            "--template is not supported for directories".into(),
+        ));
+    }
+
     let repo_root = store::require_repo_root()?;
     let config_path = store::config_path(&repo_root);
     let mut config = Config::load(&config_path)?;
@@ -48,6 +66,14 @@ pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Re
                     errors += 1;
                 }
             }
+        } else if template {
+            match add_template_file(&resolved, &repo_root, &mut config, encrypt, os, final_perms) {
+                Ok(()) => added += 1,
+                Err(e) => {
+                    ui::error(&format!("{e}"));
+                    errors += 1;
+                }
+            }
         } else {
             match add_file(
                 &resolved,
@@ -72,6 +98,175 @@ pub fn run(paths: &[PathBuf], encrypt: bool, copy: bool, os: Option<&str>) -> Re
 
     Ok(())
 }
+
+// ── Template file ──────────────────────────────────────────────────
+
+/// Add a file as a template entry.
+///
+/// Pipeline:
+/// 1. Validate template syntax and warn if no `{{ }}` tags found.
+/// 2. Rename/copy source into repo as `<mapped>.dtmpl` (or `.dtmpl.enc`).
+/// 3. Remove the original file.
+/// 4. Render the template immediately and write rendered output to target.
+#[allow(clippy::too_many_arguments)]
+fn add_template_file(
+    file_path: &Path,
+    repo_root: &Path,
+    config: &mut Config,
+    encrypt: bool,
+    os: Option<&str>,
+    permissions: Option<u32>,
+) -> Result<()> {
+    // Read the template source
+    let template_text =
+        fs::read_to_string(file_path).map_err(|e| Error::io(file_path, "read template file", e))?;
+
+    // Scan for variables — warn if none found
+    let vars_found = crate::template::scan_variables(&template_text);
+    if vars_found.is_empty() {
+        ui::warning(&format!(
+            "`{}` has no template variables (`{{{{ }}}}`) — add with --template anyway",
+            file_path.display()
+        ));
+    }
+
+    let repo_relative = path::map_to_repo(file_path)?;
+    let target = path::collapse_tilde(file_path);
+    let target_str = target.to_string_lossy().to_string();
+
+    // Source in repo: append .dtmpl (and .enc if encrypting)
+    let source_str = if encrypt {
+        format!("{}.dtmpl.enc", repo_relative.to_string_lossy())
+    } else {
+        format!("{}.dtmpl", repo_relative.to_string_lossy())
+    };
+
+    let repo_dest = repo_root.join(&source_str);
+
+    // Ensure parent dir exists
+    if let Some(parent) = repo_dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| Error::io(parent, "create directory", e))?;
+    }
+
+    // Store the template source in the repo (encrypt if requested)
+    let master_key = if encrypt {
+        let password = ui::password("Vault password");
+        let mk = crate::crypto::vault::unlock_vault(&password)?;
+        let content = template_text.as_bytes().to_vec();
+        let encrypted = crate::crypto::encrypt_with_key(&content, &mk)?;
+        crate::fs::atomic_write(&repo_dest, &encrypted)?;
+        Some(mk)
+    } else {
+        crate::fs::atomic_write(&repo_dest, template_text.as_bytes())?;
+        None
+    };
+
+    // Add to config (template = true because source ends with .dtmpl)
+    let entry = Entry {
+        source: source_str.clone(),
+        target: target_str.clone(),
+        method: Some(DeployMethod::Copy), // templates are always copy-deployed
+        encrypted: encrypt,
+        directory: false,
+        template: true,
+        os: os.map(String::from),
+        permissions,
+        before: None,
+        after: None,
+    };
+
+    config.add_entry(entry)?;
+
+    // Render the template immediately and deploy
+    let expanded_target = path::expand_tilde(Path::new(&target_str))?;
+
+    // Remove the original file
+    fs::remove_file(file_path).map_err(|e| Error::io(file_path, "remove original", e))?;
+
+    let rendered = if encrypt {
+        // Decrypt for rendering
+        let mk = master_key.unwrap();
+        let encrypted = fs::read(&repo_dest)
+            .map_err(|e| Error::io(&repo_dest, "read encrypted template", e))?;
+        let plaintext_bytes = crate::crypto::decrypt_with_key(&encrypted, &mk)?;
+        let plaintext = String::from_utf8(plaintext_bytes).map_err(|_| Error::Template {
+            source: source_str.clone(),
+            message: "template is not valid UTF-8".into(),
+        })?;
+        render_with_context(&plaintext, &source_str, config)?
+    } else {
+        render_with_context(&template_text, &source_str, config)?
+    };
+
+    crate::fs::atomic_write(&expanded_target, rendered.as_bytes())?;
+
+    if let Some(perms) = permissions {
+        crate::fs::set_permissions(&expanded_target, perms)?;
+    }
+
+    let label = if encrypt {
+        " (template, encrypted)"
+    } else {
+        " (template)"
+    };
+    ui::success(&format!("{source_str} → {target_str}{label}"));
+
+    Ok(())
+}
+
+/// Build a render context and render template text, reporting unresolved
+/// variables with fix hints.
+fn render_with_context(template_text: &str, source_name: &str, config: &Config) -> Result<String> {
+    // Load local var store (best-effort; missing file is fine)
+    let local_vars = VarStore::load().map(|s| s.as_pairs()).unwrap_or_default();
+
+    // Determine repo root string for the context
+    let repo_root_str = store::get_repo_root()
+        .ok()
+        .flatten()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let ctx = crate::template::RenderContext::new(&repo_root_str, &config.vars, &local_vars);
+
+    // Scan variables first so we can give a nice error with fix hints
+    let vars = crate::template::scan_variables(template_text);
+    let mut missing: Vec<String> = Vec::new();
+    for var in &vars {
+        if var.namespace == "var" && ctx.resolve("var", &var.key).is_none() {
+            missing.push(var.key.clone());
+        }
+        if var.namespace == "dotling" && !ctx.builtins.contains_key(&var.key) {
+            return Err(Error::Template {
+                source: source_name.to_string(),
+                message: format!("unknown built-in `dotling.{}`", var.key),
+            });
+        }
+    }
+
+    if !missing.is_empty() {
+        // Print hints before the hard error
+        for key in &missing {
+            ui::hint(&format!("  → dotling vars set {key} <value>"));
+        }
+        return Err(Error::Template {
+            source: source_name.to_string(),
+            message: format!(
+                "unresolved variable{}: {} — run `dotling vars set <key> <value>` then sync",
+                if missing.len() == 1 { "" } else { "s" },
+                missing
+                    .iter()
+                    .map(|k| format!("var.{k}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
+    }
+
+    crate::template::render(template_text, &ctx, source_name)
+}
+
+// ── Plain file ─────────────────────────────────────────────────────
 
 /// Add a single file to tracking.
 #[allow(clippy::too_many_arguments)]
@@ -125,6 +320,7 @@ fn add_file(
         method,
         encrypted: encrypt,
         directory: false,
+        template: false,
         os: os.map(String::from),
         permissions,
         before: None,
@@ -169,6 +365,8 @@ fn add_file(
     Ok(())
 }
 
+// ── Directory ─────────────────────────────────────────────────────
+
 /// Add a directory to tracking.
 #[allow(clippy::too_many_arguments)]
 fn add_directory(
@@ -211,6 +409,7 @@ fn add_directory(
         method,
         encrypted: encrypt,
         directory: true,
+        template: false,
         os: os.map(String::from),
         permissions,
         before: None,

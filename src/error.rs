@@ -26,6 +26,8 @@ pub enum Error {
     Deploy { entry: String, message: String },
     /// A vault operation failed.
     Vault(String),
+    /// A template rendering or validation error.
+    Template { source: String, message: String },
     /// A user-facing error with a clear message (no internal detail needed).
     User(String),
 }
@@ -57,6 +59,9 @@ impl fmt::Display for Error {
                 write!(f, "deploy `{entry}`: {message}")
             }
             Self::Vault(msg) => write!(f, "vault error: {msg}"),
+            Self::Template { source, message } => {
+                write!(f, "template error in `{source}`: {message}")
+            }
             Self::User(msg) => write!(f, "{msg}"),
         }
     }

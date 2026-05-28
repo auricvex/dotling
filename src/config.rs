@@ -50,6 +50,9 @@ pub struct Entry {
     pub encrypted: bool,
     /// Whether this is a directory entry.
     pub directory: bool,
+    /// Whether this is a template entry (source ends with `.dtmpl`).
+    /// Inferred from `source` at parse time — not stored in TOML.
+    pub template: bool,
     /// OS restriction (e.g., `"linux"`, `"macos"`). `None` means all.
     pub os: Option<String>,
     /// File permissions as an octal u32 (e.g. 0o600).
@@ -89,6 +92,9 @@ pub struct Config {
     pub settings: Settings,
     pub entries: Vec<Entry>,
     pub hooks: Hooks,
+    /// Shared variable defaults from `[vars]` (committed to git).
+    /// Machine-local overrides live in `~/.dotling/vars.toml`.
+    pub vars: Vec<(String, String)>,
     /// Path to the config file itself.
     path: PathBuf,
 }
@@ -100,6 +106,7 @@ impl Config {
             settings: Settings::default(),
             entries: Vec::new(),
             hooks: Hooks::default(),
+            vars: Vec::new(),
             path,
         }
     }
@@ -211,6 +218,7 @@ fn parse_config(input: &str, path: &Path) -> Result<Config> {
     let mut settings = Settings::default();
     let mut entries = Vec::new();
     let mut hooks = Hooks::default();
+    let mut vars: Vec<(String, String)> = Vec::new();
 
     let mut current_section: Option<String> = None;
     let mut current_entry: Option<EntryBuilder> = None;
@@ -255,15 +263,19 @@ fn parse_config(input: &str, path: &Path) -> Result<Config> {
 
         // Key-value pair
         if let Some((key, value)) = parse_kv(line) {
-            handle_kv(
-                key,
-                &value,
-                current_section.as_deref(),
-                &mut settings,
-                &mut current_entry,
-                &mut hooks,
-                line_num,
-            )?;
+            if current_section.as_deref() == Some("vars") {
+                vars.push((key.to_string(), value));
+            } else {
+                handle_kv(
+                    key,
+                    &value,
+                    current_section.as_deref(),
+                    &mut settings,
+                    &mut current_entry,
+                    &mut hooks,
+                    line_num,
+                )?;
+            }
         }
     }
 
@@ -276,6 +288,7 @@ fn parse_config(input: &str, path: &Path) -> Result<Config> {
         settings,
         entries,
         hooks,
+        vars,
         path: path.to_path_buf(),
     })
 }
@@ -389,11 +402,15 @@ impl EntryBuilder {
         let _ = path; // Silence unused warning
 
         Ok(Entry {
-            source,
+            source: source.clone(),
             target,
             method,
             encrypted: self.encrypted,
             directory: self.directory,
+            // Infer template from the .dtmpl suffix — never stored in TOML.
+            template: std::path::Path::new(&source)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("dtmpl")),
             os: self.os,
             permissions: self.permissions,
             before: self.before,
@@ -481,6 +498,19 @@ fn serialize_config(config: &Config) -> String {
         let _ = writeln!(out);
     }
 
+    // [vars] — shared defaults (non-sensitive)
+    if !config.vars.is_empty() {
+        let _ = writeln!(out, "[vars]");
+        let _ = writeln!(
+            out,
+            "# Shared defaults — override in ~/.dotling/vars.toml on each machine"
+        );
+        for (key, value) in &config.vars {
+            let _ = writeln!(out, "{key} = \"{}\"", escape_string(value));
+        }
+        let _ = writeln!(out);
+    }
+
     // [[entries]]
     for entry in &config.entries {
         let _ = writeln!(out, "[[entries]]");
@@ -496,6 +526,8 @@ fn serialize_config(config: &Config) -> String {
         if entry.directory {
             let _ = writeln!(out, "directory = true");
         }
+        // Note: `template` is intentionally NOT serialized — it is inferred
+        // from the `.dtmpl` suffix in `source` at load time.
         if let Some(ref os) = entry.os {
             let _ = writeln!(out, "os = \"{os}\"");
         }
@@ -584,6 +616,7 @@ os = "macos"
                     method: None,
                     encrypted: false,
                     directory: false,
+                    template: false,
                     os: None,
                     permissions: None,
                     before: Some("echo 'entry before'".into()),
@@ -595,6 +628,7 @@ os = "macos"
                     method: Some(DeployMethod::Copy),
                     encrypted: true,
                     directory: true,
+                    template: false,
                     os: Some("linux".into()),
                     permissions: Some(0o600),
                     before: None,
@@ -606,6 +640,7 @@ os = "macos"
                 before: Some("echo 'global before'".into()),
                 after: Some("echo 'global after'".into()),
             },
+            vars: vec![],
             path: PathBuf::from("test.toml"),
         };
 
@@ -640,6 +675,7 @@ os = "macos"
                 method: None,
                 encrypted: false,
                 directory: false,
+                template: false,
                 os: None,
                 permissions: None,
                 before: None,
@@ -654,6 +690,7 @@ os = "macos"
                 method: None,
                 encrypted: false,
                 directory: false,
+                template: false,
                 os: None,
                 permissions: None,
                 before: None,
@@ -674,6 +711,7 @@ os = "macos"
                 method: None,
                 encrypted: false,
                 directory: false,
+                template: false,
                 os: None,
                 permissions: None,
                 before: None,
@@ -688,6 +726,7 @@ os = "macos"
                 method: None,
                 encrypted: false,
                 directory: false,
+                template: false,
                 os: None,
                 permissions: None,
                 before: None,
@@ -708,6 +747,7 @@ os = "macos"
                 method: None,
                 encrypted: false,
                 directory: false,
+                template: false,
                 os: None,
                 permissions: None,
                 before: None,
@@ -730,6 +770,7 @@ os = "macos"
                 method: None,
                 encrypted: false,
                 directory: false,
+                template: false,
                 os: None,
                 permissions: None,
                 before: None,
