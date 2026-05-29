@@ -534,42 +534,7 @@ dotling stores all state under `~/.dotling/`:
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Commit your changes (`git commit -m 'feat: add my feature'`)
-4. Push to the branch (`git push origin feat/my-feature`)
-5. Open a Pull Request
-
-### Development
-
-You can build and test this project using [just](https://github.com/casey/just) inside a Nix environment:
-
-```sh
-# Clone and build
-git clone https://github.com/auricvex/dotling.git
-cd dotling
-
-# List all available recipes
-nix develop --command just
-
-# Build dotling
-nix develop --command just build
-
-# Run all tests
-nix develop --command just test
-
-# Run check and clippy lints
-nix develop --command just check
-nix develop --command just clippy
-
-# Run formatting checks
-nix develop --command just fmt-check
-
-# Run the complete CI suite locally
-nix develop --command just ci
-```
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, development setup, and PR workflow.
 
 ## License
 
