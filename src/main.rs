@@ -81,5 +81,7 @@ fn run(cli: Cli) -> dotling::Result<()> {
                 older_than,
             } => dotling::commands::backup::run_clean(keep_last, older_than),
         },
+
+        Command::Completions { shell } => dotling::commands::completions::run(shell),
     }
 }

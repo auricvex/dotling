@@ -30,6 +30,7 @@
 - [Lifecycle Hooks](#lifecycle-hooks)
 - [Backups & Conflict Resolution](#backups--conflict-resolution)
 - [Sync Fingerprints](#sync-fingerprints)
+- [Shell Completions](#shell-completions)
 - [Environment Variables](#environment-variables)
 - [File Structure](#file-structure)
 - [Contributing](#contributing)
@@ -52,6 +53,7 @@
 - **Lifecycle Hooks** — run custom commands before/after syncing at a repository or entry level with safe trust verification
 - **Interactive 3-way Merge** — cleanly merge changes between repo and local files with standard git-style conflict markers
 - **Fingerprint-based Status** — speed up encrypted and copy-mode sync checks using lightweight Blake2s-256 fingerprints, without prompting for passwords
+- **Shell Completions** — tab-completion for bash, zsh, fish, elvish, and powershell via `dotling completions <SHELL>`
 
 ## Installation
 
@@ -140,6 +142,7 @@ git push
 | `dotling doctor` | Audit repository health and report issues |
 | `dotling vars <action>` | Manage machine-local template variables |
 | `dotling backup <action>` | Manage local file backups created by dotling before overwriting |
+| `dotling completions <SHELL>` | Generate shell completion scripts (bash, zsh, fish, elvish, powershell) |
 
 ### Key Flags
 
@@ -514,6 +517,43 @@ Previously, encrypted entries had to be decrypted to verify their sync state. do
 - On subsequent `status` or `sync` checks, dotling compares current file hashes against the stored fingerprint.
 - **Benefits:** You can run `dotling status` or `dotling sync --dry-run` to audit your system instantly, without entering your vault password. A password is only requested when actual file modifications need to be decrypted or re-encrypted!
 - For copy-mode plain files, fingerprints track both repo source and target file hashes, enabling deterministic detection of which side has changed.
+
+## Shell Completions
+
+dotling ships with tab-completion support for **bash**, **zsh**, **fish**, **elvish**, and **powershell**. Completions cover all subcommands, nested actions, and flags.
+
+### Quick install (auto-detect shell)
+
+```sh
+just install-completions
+```
+
+### Manual install
+
+```sh
+# Bash
+dotling completions bash > ~/.local/share/bash-completion/completions/dotling
+
+# Zsh
+dotling completions zsh > ~/.zfunc/_dotling
+# Add to ~/.zshrc if not already present:
+#   fpath=(~/.zfunc $fpath)
+#   autoload -Uz compinit && compinit
+
+# Fish
+dotling completions fish > ~/.config/fish/completions/dotling.fish
+```
+
+### Other shells
+
+```sh
+# Elvish
+dotling completions elvish > ~/.config/elvish/completions/dotling.elv
+
+# PowerShell
+dotling completions powershell > dotling.ps1
+# Then source from your $PROFILE
+```
 
 ## Environment Variables
 

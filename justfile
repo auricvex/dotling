@@ -79,3 +79,50 @@ ci: fmt-check clippy test deny audit
 # Clean build artifacts
 clean:
     cargo clean
+
+# ------------------------------------------------------------------------------
+# Shell Completions
+# ------------------------------------------------------------------------------
+
+# Generate bash completion script to stdout
+completions-bash:
+    cargo run -- completions bash
+
+# Generate zsh completion script to stdout
+completions-zsh:
+    cargo run -- completions zsh
+
+# Generate fish completion script to stdout
+completions-fish:
+    cargo run -- completions fish
+
+# Install completions for the current shell (detected from $SHELL)
+install-completions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shell=$$(basename "$$SHELL")
+    case "$$shell" in
+      bash)
+        dir="$${BASH_COMPLETION_USER_DIR:-$$HOME/.local/share/bash-completion/completions}"
+        mkdir -p "$$dir"
+        cargo run -- completions bash > "$$dir/dotling"
+        echo "Installed bash completions to $$dir/dotling"
+        ;;
+      zsh)
+        dir="$$HOME/.zfunc"
+        mkdir -p "$$dir"
+        cargo run -- completions zsh > "$$dir/_dotling"
+        echo "Installed zsh completions to $$dir/_dotling"
+        echo "Ensure ~/.zshrc contains: fpath=(~/.zfunc \$$fpath) && autoload -Uz compinit && compinit"
+        ;;
+      fish)
+        dir="$$HOME/.config/fish/completions"
+        mkdir -p "$$dir"
+        cargo run -- completions fish > "$$dir/dotling.fish"
+        echo "Installed fish completions to $$dir/dotling.fish"
+        ;;
+      *)
+        echo "Unsupported shell: $$shell. Use 'just completions-<shell>' and redirect manually."
+        exit 1
+        ;;
+    esac
