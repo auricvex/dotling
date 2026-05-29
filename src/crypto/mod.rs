@@ -163,4 +163,167 @@ mod tests {
         let decoded = hex_decode(&encoded).unwrap();
         assert_eq!(&decoded, data);
     }
+
+    // ── encrypt/decrypt edge cases ──────────────────────────────
+
+    #[test]
+    fn encrypt_decrypt_empty_data() {
+        let key = [0x01u8; 32];
+        let encrypted = encrypt_with_key(b"", &key).unwrap();
+        let decrypted = decrypt_with_key(&encrypted, &key).unwrap();
+        assert!(decrypted.is_empty());
+    }
+
+    #[test]
+    fn encrypt_decrypt_large_data() {
+        let key = [0x02u8; 32];
+        let data = vec![0xABu8; 1024 * 1024]; // 1 MB
+        let encrypted = encrypt_with_key(&data, &key).unwrap();
+        let decrypted = decrypt_with_key(&encrypted, &key).unwrap();
+        assert_eq!(decrypted, data);
+    }
+
+    #[test]
+    fn encrypted_output_has_correct_header() {
+        let key = [0x03u8; 32];
+        let encrypted = encrypt_with_key(b"test", &key).unwrap();
+        let text = std::str::from_utf8(&encrypted).unwrap();
+        assert!(text.starts_with("DOTLING-ENC-V2\n"));
+    }
+
+    #[test]
+    fn encrypted_output_is_valid_utf8() {
+        let key = [0x04u8; 32];
+        let encrypted = encrypt_with_key(b"binary-safe test", &key).unwrap();
+        assert!(std::str::from_utf8(&encrypted).is_ok());
+    }
+
+    #[test]
+    fn decrypt_invalid_header() {
+        let key = [0x05u8; 32];
+        let bad = b"WRONG-HEADER\nabc\nabc\n";
+        let result = decrypt_with_key(bad, &key);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("DOTLING-ENC-V2"));
+    }
+
+    #[test]
+    fn decrypt_truncated_data() {
+        let key = [0x06u8; 32];
+        let bad = b"DOTLING-ENC-V2\nabcd1234abcd1234abcd1234\n";
+        let result = decrypt_with_key(bad, &key);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_invalid_base64() {
+        let key = [0x07u8; 32];
+        let bad = b"DOTLING-ENC-V2\nabcd1234abcd1234abcd1234\n!!!not-base64!!!\n";
+        let result = decrypt_with_key(bad, &key);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_wrong_nonce_length() {
+        let key = [0x08u8; 32];
+        // 4 hex chars = 2 bytes, not 12
+        let bad = b"DOTLING-ENC-V2\nabcd\ndGVzdA==\n";
+        let result = decrypt_with_key(bad, &key);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("nonce"));
+    }
+
+    #[test]
+    fn decrypt_tampered_ciphertext() {
+        let key = [0x09u8; 32];
+        let encrypted = encrypt_with_key(b"original", &key).unwrap();
+        let text = std::str::from_utf8(&encrypted).unwrap().to_string();
+
+        // Tamper with the base64 payload: flip a character
+        let mut lines: Vec<&str> = text.lines().collect();
+        let payload = lines[2].as_bytes().to_vec();
+        let mut tampered_payload = payload.clone();
+        tampered_payload[0] = if tampered_payload[0] == b'A' {
+            b'B'
+        } else {
+            b'A'
+        };
+        lines[2] = std::str::from_utf8(&tampered_payload).unwrap();
+
+        let tampered = lines.join("\n");
+        let result = decrypt_with_key(tampered.as_bytes(), &key);
+        assert!(result.is_err());
+    }
+
+    // ── derive_key tests ────────────────────────────────────────
+
+    #[test]
+    fn derive_key_deterministic() {
+        let password = "test-password";
+        let salt = b"fixed-salt-value-1234567890ab";
+        let key1 = derive_key(password, salt).unwrap();
+        let key2 = derive_key(password, salt).unwrap();
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn derive_key_different_salt() {
+        let password = "test-password";
+        let salt1 = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let salt2 = b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let key1 = derive_key(password, salt1).unwrap();
+        let key2 = derive_key(password, salt2).unwrap();
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn derive_key_empty_password() {
+        let salt = b"some-salt-value-1234567890abcd";
+        let key = derive_key("", salt).unwrap();
+        assert_eq!(key.len(), 32);
+    }
+
+    // ── random_bytes tests ──────────────────────────────────────
+
+    #[test]
+    fn random_bytes_different() {
+        let a: [u8; 32] = random_bytes();
+        let b: [u8; 32] = random_bytes();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn random_bytes_correct_length() {
+        let a: [u8; 12] = random_bytes();
+        let b: [u8; 32] = random_bytes();
+        assert_eq!(a.len(), 12);
+        assert_eq!(b.len(), 32);
+    }
+
+    // ── hex edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn hex_decode_odd_length() {
+        let result = hex_decode("abc");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("odd length"));
+    }
+
+    #[test]
+    fn hex_decode_invalid_chars() {
+        let result = hex_decode("zzzz");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn hex_decode_empty() {
+        let result = hex_decode("").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn hex_encode_empty() {
+        let result = hex_encode(b"");
+        assert!(result.is_empty());
+    }
 }

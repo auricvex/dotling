@@ -244,18 +244,18 @@ fn decrypt_dir_to_target(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<()> {
 #[cfg(test)]
 #[allow(clippy::disallowed_types)]
 mod tests {
-    use std::{fs, sync::Mutex};
+    use std::fs;
 
     use tempfile::tempdir;
 
     use super::*;
     use crate::config::{Config, DeployMethod, Entry};
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
     fn test_remove_symlink_file() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = crate::core::ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let home_temp = tempdir().unwrap();
         unsafe {
@@ -313,7 +313,9 @@ mod tests {
 
     #[test]
     fn test_remove_copy_file() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = crate::core::ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let home_temp = tempdir().unwrap();
         unsafe {
@@ -377,7 +379,9 @@ mod tests {
 
     #[test]
     fn test_remove_symlink_directory() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = crate::core::ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let home_temp = tempdir().unwrap();
         unsafe {

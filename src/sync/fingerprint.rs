@@ -393,4 +393,229 @@ mod tests {
             Some(false)
         );
     }
+
+    // ── who_changed tests ───────────────────────────────────────
+
+    #[test]
+    fn who_changed_unknown() {
+        let store = FingerprintStore::load(NamedTempFile::new().unwrap().path().to_path_buf());
+        let src = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        assert_eq!(
+            store.who_changed("missing", src.path(), tgt.path()),
+            WhichSide::Unknown
+        );
+    }
+
+    #[test]
+    fn who_changed_neither() {
+        let store_file = NamedTempFile::new().unwrap();
+        let src = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), "content").unwrap();
+        std::fs::write(tgt.path(), "content").unwrap();
+
+        let mut store = FingerprintStore::load(store_file.path().to_path_buf());
+        store.record_plain("entry", src.path(), tgt.path()).unwrap();
+        store.save().unwrap();
+
+        let store2 = FingerprintStore::load(store_file.path().to_path_buf());
+        assert_eq!(
+            store2.who_changed("entry", src.path(), tgt.path()),
+            WhichSide::Neither
+        );
+    }
+
+    #[test]
+    fn who_changed_repo_only() {
+        let store_file = NamedTempFile::new().unwrap();
+        let src = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), "original").unwrap();
+        std::fs::write(tgt.path(), "original").unwrap();
+
+        let mut store = FingerprintStore::load(store_file.path().to_path_buf());
+        store.record_plain("entry", src.path(), tgt.path()).unwrap();
+        store.save().unwrap();
+
+        // Modify source only
+        std::fs::write(src.path(), "modified source").unwrap();
+
+        let store2 = FingerprintStore::load(store_file.path().to_path_buf());
+        assert_eq!(
+            store2.who_changed("entry", src.path(), tgt.path()),
+            WhichSide::RepoOnly
+        );
+    }
+
+    #[test]
+    fn who_changed_actual_only() {
+        let store_file = NamedTempFile::new().unwrap();
+        let src = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), "original").unwrap();
+        std::fs::write(tgt.path(), "original").unwrap();
+
+        let mut store = FingerprintStore::load(store_file.path().to_path_buf());
+        store.record_plain("entry", src.path(), tgt.path()).unwrap();
+        store.save().unwrap();
+
+        // Modify target only
+        std::fs::write(tgt.path(), "modified target").unwrap();
+
+        let store2 = FingerprintStore::load(store_file.path().to_path_buf());
+        assert_eq!(
+            store2.who_changed("entry", src.path(), tgt.path()),
+            WhichSide::ActualOnly
+        );
+    }
+
+    #[test]
+    fn who_changed_both() {
+        let store_file = NamedTempFile::new().unwrap();
+        let src = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), "original").unwrap();
+        std::fs::write(tgt.path(), "original").unwrap();
+
+        let mut store = FingerprintStore::load(store_file.path().to_path_buf());
+        store.record_plain("entry", src.path(), tgt.path()).unwrap();
+        store.save().unwrap();
+
+        // Modify both
+        std::fs::write(src.path(), "new source").unwrap();
+        std::fs::write(tgt.path(), "new target").unwrap();
+
+        let store2 = FingerprintStore::load(store_file.path().to_path_buf());
+        assert_eq!(
+            store2.who_changed("entry", src.path(), tgt.path()),
+            WhichSide::Both
+        );
+    }
+
+    // ── record_plain tests ──────────────────────────────────────
+
+    #[test]
+    fn record_plain_roundtrip() {
+        let store_file = NamedTempFile::new().unwrap();
+        let src = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), "repo content").unwrap();
+        std::fs::write(tgt.path(), "target content").unwrap();
+
+        let mut store = FingerprintStore::load(store_file.path().to_path_buf());
+        store
+            .record_plain("copy/entry", src.path(), tgt.path())
+            .unwrap();
+        store.save().unwrap();
+
+        let store2 = FingerprintStore::load(store_file.path().to_path_buf());
+        assert_eq!(
+            store2.who_changed("copy/entry", src.path(), tgt.path()),
+            WhichSide::Neither
+        );
+    }
+
+    // ── is_in_sync tests ────────────────────────────────────────
+
+    #[test]
+    fn is_in_sync_after_record() {
+        let store_file = NamedTempFile::new().unwrap();
+        let enc = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        std::fs::write(enc.path(), "encrypted").unwrap();
+        std::fs::write(tgt.path(), "plaintext").unwrap();
+
+        let mut store = FingerprintStore::load(store_file.path().to_path_buf());
+        store.record("entry", enc.path(), tgt.path()).unwrap();
+
+        assert_eq!(
+            store.is_in_sync("entry", enc.path(), tgt.path()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn is_in_sync_unknown_source() {
+        let store = FingerprintStore::load(NamedTempFile::new().unwrap().path().to_path_buf());
+        let enc = NamedTempFile::new().unwrap();
+        let tgt = NamedTempFile::new().unwrap();
+        assert_eq!(store.is_in_sync("missing", enc.path(), tgt.path()), None);
+    }
+
+    // ── hash_path tests ─────────────────────────────────────────
+
+    #[test]
+    fn hash_path_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("content");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a.txt"), "aaa").unwrap();
+        fs::write(dir.join("b.txt"), "bbb").unwrap();
+
+        let h = hash_path(&dir).unwrap();
+        assert_eq!(h.len(), 64);
+        // Deterministic
+        assert_eq!(hash_path(&dir).unwrap(), h);
+    }
+
+    #[test]
+    fn hash_path_nonexistent() {
+        let temp = tempfile::tempdir().unwrap();
+        let result = hash_path(&temp.path().join("nonexistent"));
+        assert!(result.is_err());
+    }
+
+    // ── serialization tests ─────────────────────────────────────
+
+    #[test]
+    fn serialize_parse_roundtrip() {
+        let mut records = HashMap::new();
+        records.insert(
+            "a/b".to_string(),
+            EntryFingerprint {
+                enc_hash: "abc123".to_string(),
+                target_hash: "def456".to_string(),
+                source_hash: String::new(),
+            },
+        );
+        records.insert(
+            "c/d".to_string(),
+            EntryFingerprint {
+                enc_hash: String::new(),
+                target_hash: "789abc".to_string(),
+                source_hash: "012def".to_string(),
+            },
+        );
+
+        let serialized = serialize_store(&records);
+        let parsed = parse_store(&serialized);
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed["a/b"].enc_hash, "abc123");
+        assert_eq!(parsed["a/b"].target_hash, "def456");
+        assert_eq!(parsed["c/d"].source_hash, "012def");
+    }
+
+    #[test]
+    fn parse_empty_input() {
+        let parsed = parse_store("");
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn parse_with_comments() {
+        let input = "# comment\n[[entries]]\nsource = \"x\"\ntarget_hash = \"abc\"\n";
+        let parsed = parse_store(input);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed["x"].target_hash, "abc");
+    }
+
+    #[test]
+    fn parse_with_missing_optional_fields() {
+        let input = "[[entries]]\nsource = \"x\"\ntarget_hash = \"abc\"\n";
+        let parsed = parse_store(input);
+        assert_eq!(parsed["x"].enc_hash, "");
+        assert_eq!(parsed["x"].source_hash, "");
+    }
 }
