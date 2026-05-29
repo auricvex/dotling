@@ -6,6 +6,23 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
 
 ---
 
+## v0.6.2
+
+### Changed
+
+- **Module restructuring** — Reorganized the codebase from a flat module layout into a layered architecture with three top-level domain modules:
+  - `core/` — foundational utilities: `error`, `fs`, `path`, `platform`, `store`
+  - `config/` — configuration and templating: `config`, `template`, `vars`
+  - `sync/` — sync engine: `backup`, `deploy`, `fingerprint`, `hooks`, `merge`
+- Added `lib.rs` with public re-exports so downstream paths (`dotling::error`, `dotling::ui`, etc.) resolve correctly.
+- `main.rs` now imports via the `dotling::` crate path instead of bare module names.
+
+### Fixed
+
+- Minor formatting cleanup in the sync command hook error message.
+
+---
+
 ## v0.6.1
 
 ### Added
