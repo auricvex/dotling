@@ -152,6 +152,21 @@ pub enum Command {
         #[command(subcommand)]
         action: BackupAction,
     },
+
+    /// Generate shell completion scripts.
+    #[command(
+        long_about = "Generate shell completion scripts for the given shell.\n\n\
+            The script is written to stdout. Redirect it to your shell's\n\
+            completion directory to activate.\n\n\
+            Examples:\n\
+              dotling completions bash > ~/.local/share/bash-completion/completions/dotling\n\
+              dotling completions zsh > ~/.zfunc/_dotling\n\
+              dotling completions fish > ~/.config/fish/completions/dotling.fish"
+    )]
+    Completions {
+        /// The shell to generate completions for.
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand)]

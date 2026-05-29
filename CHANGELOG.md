@@ -6,6 +6,18 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
 
 ---
 
+## v0.7.0
+
+### Added
+
+- **Shell completions** (`dotling completions <SHELL>`)
+  - Generate tab-completion scripts for **bash**, **zsh**, **fish**, **elvish**, and **powershell**.
+  - Completions are generated at runtime from the CLI definition using `clap_complete`, so they stay in sync as commands and flags evolve.
+  - Output is written to stdout — redirect to your shell's completion directory to activate.
+  - Quick install: `just install-completions` auto-detects your shell and writes to the conventional location.
+
+---
+
 ## v0.6.2
 
 ### Changed

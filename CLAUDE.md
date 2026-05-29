@@ -68,7 +68,7 @@ All commands use `just` (see `justfile`). Inside Nix: `nix develop --command jus
 
 ### Command Modules (`src/commands/`)
 
-`init`, `add`, `remove`, `sync`, `status`, `edit`, `encrypt`, `vault`, `doctor`, `vars`, `backup`
+`init`, `add`, `remove`, `sync`, `status`, `edit`, `encrypt`, `vault`, `doctor`, `vars`, `backup`, `completions`
 
 `Encrypt` and `Decrypt` are separate CLI subcommands but both handled by `commands/encrypt.rs`. `Vault`, `Vars`, and `Backup` each have nested sub-action enums.
 
@@ -88,8 +88,8 @@ All commands use `just` (see `justfile`). Inside Nix: `nix develop --command jus
 
 ## Testing
 
-Tests are inline `#[cfg(test)] mod tests` blocks (no separate `tests/` directory). Use `tempfile` for temp dirs. 89 tests across 14 files, focused on core logic (config parsing, template rendering, merge, fingerprinting, crypto roundtrips, hook trust).
+Tests are inline `#[cfg(test)] mod tests` blocks (no separate `tests/` directory). Use `tempfile` for temp dirs. 94 tests across 15 files, focused on core logic (config parsing, template rendering, merge, fingerprinting, crypto roundtrips, hook trust, shell completions).
 
 ## Dependencies
 
-Minimal: `clap` (CLI), `chacha20poly1305` + `argon2` + `blake2` + `rand` + `base64` (crypto). Dev: `tempfile`. No serde, no async runtime.
+Minimal: `clap` (CLI), `clap_complete` (shell completions), `chacha20poly1305` + `argon2` + `blake2` + `rand` + `base64` (crypto). Dev: `tempfile`. No serde, no async runtime.
