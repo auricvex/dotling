@@ -268,3 +268,306 @@ fn copy_directory(src: &Path, dst: &Path) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_entry(
+        source: &str,
+        target: &str,
+        method: Option<DeployMethod>,
+        encrypted: bool,
+    ) -> Entry {
+        Entry {
+            source: source.into(),
+            target: target.into(),
+            method,
+            encrypted,
+            directory: false,
+            template: false,
+            os: None,
+            permissions: None,
+            before: None,
+            after: None,
+        }
+    }
+
+    fn make_template_entry(source: &str, target: &str, encrypted: bool) -> Entry {
+        Entry {
+            source: source.into(),
+            target: target.into(),
+            method: None,
+            encrypted,
+            directory: false,
+            template: true,
+            os: None,
+            permissions: None,
+            before: None,
+            after: None,
+        }
+    }
+
+    // ── check_state tests ───────────────────────────────────────
+
+    #[test]
+    fn state_symlink_deployed() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "config").unwrap();
+        crate::fs::create_symlink(&source, &target).unwrap();
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        let state = check_state(&entry, &repo, DeployMethod::Symlink);
+        assert_eq!(state, EntryState::Deployed);
+    }
+
+    #[test]
+    fn state_symlink_broken() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let target = temp.path().join(".zshrc");
+        let bad_source = repo.join("nonexistent");
+        crate::fs::create_symlink(&bad_source, &target).unwrap();
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        let state = check_state(&entry, &repo, DeployMethod::Symlink);
+        assert_eq!(state, EntryState::Broken);
+    }
+
+    #[test]
+    fn state_symlink_wrong_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let wrong = repo.join("other");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "config").unwrap();
+        crate::fs::create_symlink(&wrong, &target).unwrap();
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        let state = check_state(&entry, &repo, DeployMethod::Symlink);
+        assert_eq!(state, EntryState::Broken);
+    }
+
+    #[test]
+    fn state_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let target = temp.path().join(".zshrc");
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        let state = check_state(&entry, &repo, DeployMethod::Copy);
+        assert_eq!(state, EntryState::Missing);
+    }
+
+    #[test]
+    fn state_copy_deployed() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "same content").unwrap();
+        fs::write(&target, "same content").unwrap();
+
+        let entry = make_entry(
+            "zshrc",
+            &target.to_string_lossy(),
+            Some(DeployMethod::Copy),
+            false,
+        );
+        let state = check_state(&entry, &repo, DeployMethod::Copy);
+        assert_eq!(state, EntryState::Deployed);
+    }
+
+    #[test]
+    fn state_copy_modified() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "repo version").unwrap();
+        fs::write(&target, "user modified").unwrap();
+
+        let entry = make_entry(
+            "zshrc",
+            &target.to_string_lossy(),
+            Some(DeployMethod::Copy),
+            false,
+        );
+        let state = check_state(&entry, &repo, DeployMethod::Copy);
+        assert_eq!(state, EntryState::Modified);
+    }
+
+    #[test]
+    fn state_conflict_regular_at_symlink_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "config").unwrap();
+        fs::write(&target, "user file").unwrap(); // regular file, not a symlink
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        let state = check_state(&entry, &repo, DeployMethod::Symlink);
+        assert_eq!(state, EntryState::Conflict);
+    }
+
+    #[test]
+    fn state_template_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc.dtmpl");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "template").unwrap();
+        fs::write(&target, "rendered").unwrap();
+
+        let entry = make_template_entry("zshrc.dtmpl", &target.to_string_lossy(), false);
+        let state = check_state(&entry, &repo, DeployMethod::Symlink);
+        assert_eq!(state, EntryState::Deployed);
+    }
+
+    // ── deploy_entry tests ──────────────────────────────────────
+
+    #[test]
+    fn deploy_symlink_creates_link() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "config").unwrap();
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        deploy_entry(&entry, &repo, DeployMethod::Symlink, false).unwrap();
+
+        assert!(crate::fs::is_symlink(&target));
+        assert_eq!(crate::fs::read_link(&target).unwrap(), source);
+    }
+
+    #[test]
+    fn deploy_copy_copies_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "config data").unwrap();
+
+        let entry = make_entry(
+            "zshrc",
+            &target.to_string_lossy(),
+            Some(DeployMethod::Copy),
+            false,
+        );
+        deploy_entry(&entry, &repo, DeployMethod::Copy, false).unwrap();
+
+        assert!(!crate::fs::is_symlink(&target));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "config data");
+    }
+
+    #[test]
+    fn deploy_creates_parent_dirs() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("config");
+        let target = temp.path().join("deep/nested/.config");
+        fs::write(&source, "data").unwrap();
+
+        let entry = make_entry(
+            "config",
+            &target.to_string_lossy(),
+            Some(DeployMethod::Copy),
+            false,
+        );
+        deploy_entry(&entry, &repo, DeployMethod::Copy, false).unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "data");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deploy_sets_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("secret");
+        let target = temp.path().join(".secret");
+        fs::write(&source, "data").unwrap();
+
+        let mut entry = make_entry(
+            "secret",
+            &target.to_string_lossy(),
+            Some(DeployMethod::Copy),
+            false,
+        );
+        entry.permissions = Some(0o600);
+        deploy_entry(&entry, &repo, DeployMethod::Copy, false).unwrap();
+
+        let perms = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(perms, 0o600);
+    }
+
+    #[test]
+    fn deploy_force_overwrites_conflict() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "new config").unwrap();
+        // Regular file where a symlink should be → Conflict
+        fs::write(&target, "user file").unwrap();
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+
+        // Without force: Conflict → should error
+        let result = deploy_entry(&entry, &repo, DeployMethod::Symlink, false);
+        assert!(result.is_err());
+
+        // With force: should succeed
+        deploy_entry(&entry, &repo, DeployMethod::Symlink, true).unwrap();
+        assert!(crate::fs::is_symlink(&target));
+    }
+
+    #[test]
+    fn deploy_already_deployed_noop() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let source = repo.join("zshrc");
+        let target = temp.path().join(".zshrc");
+        fs::write(&source, "config").unwrap();
+        crate::fs::create_symlink(&source, &target).unwrap();
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        // Should succeed without error (already deployed)
+        deploy_entry(&entry, &repo, DeployMethod::Symlink, false).unwrap();
+        assert!(crate::fs::is_symlink(&target));
+    }
+
+    #[test]
+    fn deploy_missing_source_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let target = temp.path().join(".zshrc");
+
+        let entry = make_entry("zshrc", &target.to_string_lossy(), None, false);
+        let result = deploy_entry(&entry, &repo, DeployMethod::Symlink, false);
+        assert!(result.is_err());
+    }
+}

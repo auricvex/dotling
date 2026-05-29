@@ -223,4 +223,240 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "test data");
         let _ = fs::remove_file(&path);
     }
+
+    // ── copy_file tests ─────────────────────────────────────────
+
+    #[test]
+    fn copy_file_preserves_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().join("src.txt");
+        let dst = temp.path().join("dst.txt");
+        fs::write(&src, "hello world").unwrap();
+
+        copy_file(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "hello world");
+    }
+
+    #[test]
+    fn copy_file_creates_parent_dirs() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().join("src.txt");
+        let dst = temp.path().join("deep/nested/dir/dst.txt");
+        fs::write(&src, "data").unwrap();
+
+        copy_file(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "data");
+    }
+
+    #[test]
+    fn copy_file_overwrites_existing() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().join("src.txt");
+        let dst = temp.path().join("dst.txt");
+        fs::write(&src, "new content").unwrap();
+        fs::write(&dst, "old content").unwrap();
+
+        copy_file(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "new content");
+    }
+
+    // ── symlink tests ───────────────────────────────────────────
+
+    #[test]
+    fn create_symlink_and_read_link() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let link = temp.path().join("link");
+        fs::write(&target, "data").unwrap();
+
+        create_symlink(&target, &link).unwrap();
+        assert!(is_symlink(&link));
+        assert_eq!(read_link(&link).unwrap(), target);
+    }
+
+    #[test]
+    fn create_symlink_creates_parent_dirs() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let link = temp.path().join("deep/nested/link");
+        fs::write(&target, "data").unwrap();
+
+        create_symlink(&target, &link).unwrap();
+        assert!(is_symlink(&link));
+    }
+
+    #[test]
+    fn remove_symlink_preserves_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let link = temp.path().join("link");
+        fs::write(&target, "data").unwrap();
+        create_symlink(&target, &link).unwrap();
+
+        remove_symlink(&link).unwrap();
+        assert!(!is_symlink(&link));
+        assert!(target.exists(), "target should be preserved");
+    }
+
+    // ── is_symlink tests ────────────────────────────────────────
+
+    #[test]
+    fn is_symlink_true_for_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let link = temp.path().join("link");
+        fs::write(&target, "data").unwrap();
+        create_symlink(&target, &link).unwrap();
+        assert!(is_symlink(&link));
+    }
+
+    #[test]
+    fn is_symlink_false_for_regular_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("file");
+        fs::write(&path, "data").unwrap();
+        assert!(!is_symlink(&path));
+    }
+
+    #[test]
+    fn is_symlink_false_for_nonexistent() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(!is_symlink(&temp.path().join("nonexistent")));
+    }
+
+    // ── files_identical tests ───────────────────────────────────
+
+    #[test]
+    fn files_identical_same_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let a = temp.path().join("a.txt");
+        let b = temp.path().join("b.txt");
+        fs::write(&a, "same").unwrap();
+        fs::write(&b, "same").unwrap();
+        assert!(files_identical(&a, &b).unwrap());
+    }
+
+    #[test]
+    fn files_identical_different_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let a = temp.path().join("a.txt");
+        let b = temp.path().join("b.txt");
+        fs::write(&a, "foo").unwrap();
+        fs::write(&b, "bar").unwrap();
+        assert!(!files_identical(&a, &b).unwrap());
+    }
+
+    #[test]
+    fn files_identical_nonexistent() {
+        let temp = tempfile::tempdir().unwrap();
+        let a = temp.path().join("a.txt");
+        let b = temp.path().join("missing.txt");
+        fs::write(&a, "data").unwrap();
+        assert!(files_identical(&a, &b).is_err());
+    }
+
+    // ── atomic_write edge cases ─────────────────────────────────
+
+    #[test]
+    fn atomic_write_creates_parent() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("deep/nested/file.txt");
+        atomic_write(&path, b"data").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "data");
+    }
+
+    #[test]
+    fn atomic_write_overwrites() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("file.txt");
+        atomic_write(&path, b"first").unwrap();
+        atomic_write(&path, b"second").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+    }
+
+    // ── permissions tests ───────────────────────────────────────
+
+    #[cfg(unix)]
+    #[test]
+    fn set_and_get_permissions_roundtrip() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("file.txt");
+        fs::write(&path, "data").unwrap();
+
+        set_permissions(&path, 0o755).unwrap();
+        let perms = get_permissions(&path).unwrap();
+        assert_eq!(perms, Some(0o755));
+
+        set_permissions(&path, 0o600).unwrap();
+        let perms = get_permissions(&path).unwrap();
+        assert_eq!(perms, Some(0o600));
+    }
+
+    // ── walk_dir tests ──────────────────────────────────────────
+
+    #[test]
+    fn walk_dir_nested_with_hidden() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        fs::create_dir_all(dir.join("a/.hidden_dir")).unwrap();
+        fs::write(dir.join("a/visible.txt"), "v").unwrap();
+        fs::write(dir.join("a/.hidden_dir/secret.txt"), "s").unwrap();
+
+        let without_hidden = walk_dir(dir, false).unwrap();
+        assert_eq!(without_hidden.len(), 1);
+
+        let with_hidden = walk_dir(dir, true).unwrap();
+        assert_eq!(with_hidden.len(), 2);
+    }
+
+    #[test]
+    fn walk_dir_sorted_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        fs::write(dir.join("z.txt"), "").unwrap();
+        fs::write(dir.join("a.txt"), "").unwrap();
+        fs::write(dir.join("m.txt"), "").unwrap();
+
+        let files = walk_dir(dir, false).unwrap();
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect();
+        assert_eq!(names, vec!["a.txt", "m.txt", "z.txt"]);
+    }
+
+    // ── cleanup_empty_parents tests ─────────────────────────────
+
+    #[test]
+    fn cleanup_empty_parents_removes_chain() {
+        let temp = tempfile::tempdir().unwrap();
+        let stop = temp.path().join("repo");
+        let file = stop.join("a/b/c/file.txt");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "data").unwrap();
+
+        // Remove the file, then clean up empty parents
+        fs::remove_file(&file).unwrap();
+        cleanup_empty_parents(&file, &stop).unwrap();
+        assert!(!stop.join("a").exists());
+        assert!(stop.exists());
+    }
+
+    #[test]
+    fn cleanup_empty_parents_stops_at_nonempty() {
+        let temp = tempfile::tempdir().unwrap();
+        let stop = temp.path().join("repo");
+        let file = stop.join("a/b/c/file.txt");
+        let sibling = stop.join("a/b/keep.txt");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "data").unwrap();
+        fs::write(&sibling, "keep").unwrap();
+
+        // Remove the file, then clean up
+        fs::remove_file(&file).unwrap();
+        cleanup_empty_parents(&file, &stop).unwrap();
+        // c/ should be removed (empty), but a/b should stay (has keep.txt)
+        assert!(!file.parent().unwrap().exists());
+        assert!(sibling.exists());
+    }
 }

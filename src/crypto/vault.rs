@@ -237,6 +237,28 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
 mod tests {
     use super::*;
 
+    /// Run a closure with HOME set to a temporary directory, then restore it.
+    fn with_temp_home(f: impl FnOnce(&Path)) {
+        let _guard = crate::core::ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let temp = tempfile::tempdir().unwrap();
+        let old_home = std::env::var_os("HOME");
+        // SAFETY: serialized via HOME_LOCK
+        unsafe {
+            std::env::set_var("HOME", temp.path());
+        }
+        f(temp.path());
+        match old_home {
+            Some(h) => unsafe {
+                std::env::set_var("HOME", h);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+    }
+
     #[test]
     fn vault_dir_is_under_home() {
         let dir = vault_dir().unwrap();
@@ -251,5 +273,113 @@ mod tests {
     #[test]
     fn days_to_ymd_known_date() {
         assert_eq!(days_to_ymd(19723), (2024, 1, 1));
+    }
+
+    // ── write_identity / decrypt_identity roundtrip ────────────
+
+    #[test]
+    fn write_identity_decrypt_roundtrip() {
+        let temp = tempfile::tempdir().unwrap();
+        let secret = [0x42u8; 32];
+        write_identity(temp.path(), "test-pass", &secret).unwrap();
+
+        let content = fs::read_to_string(temp.path().join("identity.enc")).unwrap();
+        let decrypted = decrypt_identity(&content, "test-pass").unwrap();
+        assert_eq!(decrypted, secret);
+    }
+
+    #[test]
+    fn decrypt_identity_wrong_password() {
+        let temp = tempfile::tempdir().unwrap();
+        let secret = [0x42u8; 32];
+        write_identity(temp.path(), "correct", &secret).unwrap();
+
+        let content = fs::read_to_string(temp.path().join("identity.enc")).unwrap();
+        let result = decrypt_identity(&content, "wrong");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_identity_corrupted_header() {
+        let result = decrypt_identity("WRONG-HEADER\nabc\nabc\nabc\n", "pass");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid vault"));
+    }
+
+    #[test]
+    fn decrypt_identity_truncated() {
+        let result = decrypt_identity("DOTLING-VAULT-V1\n", "pass");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_identity_bad_salt_length() {
+        let content = "DOTLING-VAULT-V1\nabcd\nabcd1234abcd1234abcd1234\ndGVzdA==\n";
+        let result = decrypt_identity(content, "pass");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("salt"));
+    }
+
+    #[test]
+    fn decrypt_identity_bad_nonce_length() {
+        let salt = hex_encode(&[0u8; 32]);
+        let content = format!("DOTLING-VAULT-V1\n{salt}\nabcd\ndGVzdA==\n");
+        let result = decrypt_identity(&content, "pass");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("nonce"));
+    }
+
+    // ── Public API tests (require HOME override) ───────────────
+    //
+    // All HOME-mutating tests are combined into a single test function
+    // to avoid interference from parallel tests that also mutate HOME
+    // (e.g. commands/remove.rs).
+
+    #[test]
+    fn vault_public_api() {
+        with_temp_home(|_home| {
+            // vault_exists before init
+            assert!(!vault_exists());
+
+            // unlock before init errors
+            let result = unlock_vault("password");
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("not initialized"));
+
+            // init creates files
+            init_vault("password").unwrap();
+            let dir = vault_dir().unwrap();
+            assert!(dir.join("identity.enc").exists());
+            assert!(dir.join("config.toml").exists());
+            assert!(vault_exists());
+
+            // init twice errors
+            let result = init_vault("password");
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("already exists"));
+
+            // unlock with correct password
+            let key = unlock_vault("password").unwrap();
+            assert_eq!(key.len(), 32);
+
+            // unlock with wrong password
+            assert!(unlock_vault("wrong").is_err());
+
+            // change password
+            change_password("password", "new-pass").unwrap();
+            assert!(unlock_vault("password").is_err());
+            let key2 = unlock_vault("new-pass").unwrap();
+            assert_eq!(key2.len(), 32);
+
+            // export and import
+            let export_dir = tempfile::tempdir().unwrap();
+            export_vault(export_dir.path(), "new-pass").unwrap();
+            assert!(export_dir.path().join("identity.enc").exists());
+
+            fs::remove_dir_all(&dir).unwrap();
+            import_vault(export_dir.path()).unwrap();
+            let restored = unlock_vault("new-pass").unwrap();
+            assert_eq!(key2, restored);
+        });
     }
 }
