@@ -81,6 +81,19 @@ curl -fsSL https://github.com/auricvex/dotling/releases/latest/download/dotling-
   | tar xz -C ~/.local/bin/
 ```
 
+### Homebrew (macOS & Linux)
+
+```sh
+brew tap auricvex/auricvex
+brew install dotling
+```
+
+Or install directly:
+
+```sh
+brew install auricvex/auricvex/dotling
+```
+
 ### Nix
 
 ```sh
