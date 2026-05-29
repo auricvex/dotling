@@ -216,10 +216,7 @@ pub fn run(
                             Some(entry),
                             Some("push"),
                         ) {
-                            ui::error(&format!(
-                                "after hook for '{}' failed: {e}",
-                                entry.source
-                            ));
+                            ui::error(&format!("after hook for '{}' failed: {e}", entry.source));
                             errors += 1;
                         }
                     }
