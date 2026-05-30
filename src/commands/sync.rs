@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use crate::{
-    backup,
     config::{Config, DeployMethod, Entry},
     deploy::EntryState,
     error::{Error, Result},
@@ -65,7 +64,6 @@ pub fn run(
     force: bool,
     prefer_actual: bool,
     no_interactive: bool,
-    always_backup: bool,
     allow_hooks: bool,
     no_hooks: bool,
 ) -> Result<()> {
@@ -190,7 +188,6 @@ pub fn run(
                 &repo_root_str,
                 &config.vars,
                 &var_store,
-                always_backup,
                 &mut password_cache,
                 &mut fp_store,
                 &mut fp_dirty,
@@ -348,9 +345,6 @@ pub fn run(
         // ── Execute the resolved action ────────────────────────
         let result = match final_action {
             SyncAction::Push | SyncAction::FixSymlink => {
-                if always_backup || force {
-                    maybe_backup(entry, &repo_root);
-                }
                 if entry.encrypted {
                     let password = get_or_prompt_password(&mut password_cache);
                     crate::deploy::deploy_encrypted(entry, &repo_root, &password)
@@ -487,8 +481,6 @@ fn resolve_conflict(
 ) -> Result<ConflictOutcome> {
     // Non-interactive fast paths.
     if force {
-        // Repo wins — back up first.
-        maybe_backup(entry, repo_root);
         return Ok(ConflictOutcome::Resolved(SyncAction::Push));
     }
     if prefer_actual {
@@ -538,13 +530,6 @@ fn resolve_conflict(
             }
 
             ui::ConflictChoice::UseRepo => {
-                // Backup before overwriting.
-                if target.exists() {
-                    match backup::backup(&target, &entry.source) {
-                        Ok(p) => ui::backup_notice(&p),
-                        Err(e) => ui::warning(&format!("could not create backup: {e}")),
-                    }
-                }
                 return Ok(ConflictOutcome::Resolved(SyncAction::Push));
             }
 
@@ -594,14 +579,6 @@ fn perform_three_way_merge(
     };
 
     let result = merge::three_way_merge(&base_text, &repo_text, &actual_text, "repo", "actual");
-
-    // Back up the actual file before writing the merge result.
-    if target.exists() {
-        match backup::backup(target, &entry.source) {
-            Ok(p) => ui::backup_notice(&p),
-            Err(e) => ui::warning(&format!("could not create backup: {e}")),
-        }
-    }
 
     // Write merge result to the actual file.
     crate::fs::atomic_write(target, result.content.as_bytes())?;
@@ -952,29 +929,6 @@ fn save_snapshot(entry: &Entry, target_path: &Path) {
     }
 }
 
-// ── Backup helper ─────────────────────────────────────────────────
-
-/// Silently backup the actual file if it exists.
-fn maybe_backup(entry: &Entry, repo_root: &Path) {
-    if let Ok(target) = crate::path::expand_tilde(std::path::Path::new(&entry.target)) {
-        if target.exists() {
-            if entry.directory {
-                match backup::backup_dir(&target, &entry.source) {
-                    Ok(p) => ui::backup_notice(&p),
-                    Err(e) => ui::warning(&format!("could not create backup: {e}")),
-                }
-            } else {
-                match backup::backup(&target, &entry.source) {
-                    Ok(p) => ui::backup_notice(&p),
-                    Err(e) => ui::warning(&format!("could not create backup: {e}")),
-                }
-            }
-        }
-    }
-    // Silence unused warning — push_encrypted is only reachable through the old path.
-    let _ = &repo_root;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────
 
 fn get_or_prompt_password(cache: &mut Option<String>) -> String {
@@ -999,7 +953,6 @@ fn sync_template_entry(
     repo_root_str: &str,
     config_vars: &[(String, String)],
     var_store: &VarStore,
-    always_backup: bool,
     password_cache: &mut Option<String>,
     fp_store: &mut FingerprintStore,
     fp_dirty: &mut bool,
@@ -1067,14 +1020,6 @@ fn sync_template_entry(
             *fp_dirty = true;
         }
         return Ok(false);
-    }
-
-    // Optionally backup existing target
-    if always_backup && target_path.exists() {
-        match backup::backup(&target_path, &entry.source) {
-            Ok(p) => ui::backup_notice(&p),
-            Err(e) => ui::warning(&format!("could not create backup: {e}")),
-        }
     }
 
     // Write rendered output

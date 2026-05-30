@@ -42,7 +42,7 @@ All commands use `just` (see `justfile`). Inside Nix: `nix develop --command jus
 - `fs.rs` — Filesystem helpers
 - `path.rs` — Path mapping: `~/.config/nvim` -> `config/nvim`, category rules for shell/git/vim/tmux/ssh/gnupg
 - `platform.rs` — Platform detection
-- `store.rs` — Global state at `~/.dotling/`: repo root, paths to fingerprints/vars/backups
+- `store.rs` — Global state at `~/.dotling/`: repo root, paths to fingerprints/vars
 
 **`config/`** — Data model and rendering:
 - `mod.rs` — Data model (`Entry`, `Config`, `Settings`, `Hooks`) and hand-rolled TOML parser/serializer. No serde.
@@ -56,7 +56,6 @@ All commands use `just` (see `justfile`). Inside Nix: `nix develop --command jus
 **`sync/`** — Sync and deployment:
 - `mod.rs` — Sync orchestration
 - `deploy.rs` — Entry deployment: symlink/copy creation, encrypted deployment, state checking (`EntryState`)
-- `backup.rs` — Backup management
 - `fingerprint.rs` — Blake2s-256 content hashing for sync-state tracking of encrypted/copy-mode entries
 - `hooks.rs` — Lifecycle hook execution with trust verification (Blake2s hash of command string), 3-attempt retry
 - `merge.rs` — Line-level three-way merge using LCS diff, produces git-style conflict markers
@@ -68,9 +67,9 @@ All commands use `just` (see `justfile`). Inside Nix: `nix develop --command jus
 
 ### Command Modules (`src/commands/`)
 
-`init`, `add`, `remove`, `sync`, `status`, `edit`, `encrypt`, `vault`, `doctor`, `vars`, `backup`, `completions`
+`init`, `add`, `remove`, `sync`, `status`, `edit`, `encrypt`, `vault`, `doctor`, `vars`, `completions`
 
-`Encrypt` and `Decrypt` are separate CLI subcommands but both handled by `commands/encrypt.rs`. `Vault`, `Vars`, and `Backup` each have nested sub-action enums.
+`Encrypt` and `Decrypt` are separate CLI subcommands but both handled by `commands/encrypt.rs`. `Vault` and `Vars` each have nested sub-action enums.
 
 ## Code Style & Linting
 

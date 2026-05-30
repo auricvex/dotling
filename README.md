@@ -14,7 +14,7 @@
 
 ---
 
-**dotling** is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, templating, backups, hooks, and multi-OS support — so you can set up a new machine in seconds.
+**dotling** is a zero-dependency dotfiles management CLI. It moves your config files into a central git repository and replaces them with symlinks (or copies). It handles the tedious parts — path mapping, conflict detection, encryption, templating, hooks, and multi-OS support — so you can set up a new machine in seconds.
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@
 - [Encryption Vault](#encryption-vault)
 - [Dotfile Templating](#dotfile-templating)
 - [Lifecycle Hooks](#lifecycle-hooks)
-- [Backups & Conflict Resolution](#backups--conflict-resolution)
+- [Conflict Resolution](#conflict-resolution)
 - [Sync Fingerprints](#sync-fingerprints)
 - [Shell Completions](#shell-completions)
 - [Environment Variables](#environment-variables)
@@ -49,7 +49,6 @@
 - **Dotfile Templating** — add machine-specific values (`hostname`, `username`, custom vars) to any dotfile using `{{ var.key }}` syntax; render on every sync via `~/.dotling/vars.toml`
 - **Health checks** — `dotling doctor` audits broken links, orphaned entries, and repo issues
 - **Conflict-safe** — refuses to overwrite unmanaged files without explicit confirmation
-- **Automated Backups** — protects local files from accidental overwrites by saving them to chronological backup sessions
 - **Lifecycle Hooks** — run custom commands before/after syncing at a repository or entry level with safe trust verification
 - **Interactive 3-way Merge** — cleanly merge changes between repo and local files with standard git-style conflict markers
 - **Fingerprint-based Status** — speed up encrypted and copy-mode sync checks using lightweight Blake2s-256 fingerprints, without prompting for passwords
@@ -139,7 +138,6 @@ git push
 | `dotling vault <action>` | Manage your password-protected encryption Vault |
 | `dotling doctor` | Audit repository health and report issues |
 | `dotling vars <action>` | Manage machine-local template variables |
-| `dotling backup <action>` | Manage local file backups created by dotling before overwriting |
 | `dotling completions <SHELL>` | Generate shell completion scripts (bash, zsh, fish, elvish, powershell) |
 
 ### Key Flags
@@ -152,10 +150,9 @@ git push
 | `add` | `--template` | Track as a template (`.dtmpl`): rendered on each sync with machine-local variables |
 | `add` | `--os <platform>` | Target OS: `linux` (alias: `darwin`), `macos`, `windows` (alias: `win`). Omit for all platforms |
 | `sync` | `--dry-run` | Preview changes without modifying anything |
-| `sync` | `--force` | Overwrite conflicting files (repo wins; local backups created automatically) |
+| `sync` | `--force` | Overwrite conflicting files (repo wins) |
 | `sync` | `--prefer-actual` | When both sides conflict, prefer the actual file (alias: `--prefer-local`) |
 | `sync` | `--no-interactive` | Do not prompt for conflict resolution; skip conflicting entries and print a warning |
-| `sync` | `--backup` | Always back up the local file before any push that would overwrite it |
 | `sync` | `--allow-hooks` | Allow executing all hooks without prompting |
 | `sync` | `--no-hooks` | Disable executing any hooks |
 | `status` | `--diff` | Show inline diffs for modified copy entries |
@@ -292,13 +289,13 @@ dotling sync   # detects the file is newer → re-encrypts into ssh/config.enc
 
 ### 4. Migrating to a new machine
 
-Export your vault bundle from your old machine:
+Export your vault as a single encrypted bundle from your old machine:
 
 ```sh
 dotling vault export my-vault.bundle
 ```
 
-Then import it on the new machine and sync:
+Then import it on the new machine (you'll be prompted for your vault password) and sync:
 
 ```sh
 dotling vault import my-vault.bundle
@@ -469,25 +466,15 @@ Selecting `always` stores the Blake2s-256 hash of the command string in `~/.dotl
 
 If a hook command exits with a non-zero status, dotling automatically retries it up to **3 times** (1 initial attempt + 2 retries) before aborting the sync. A warning is printed after each failed attempt so the failure is always visible.
 
-## Backups & Conflict Resolution
+## Conflict Resolution
 
-### Backups
-
-To protect your local environment from accidental data loss, dotling automatically backs up files before they are overwritten:
-
-- Backups are stored in `~/.dotling/backups/<unix-seconds>/<repo-relative-source-path>`.
-- Pass `--backup` to the sync command to always force a local backup before any push that would overwrite a file, even when there is no conflict.
-- `--force` also creates backups automatically before overwriting.
-- List backup sessions using `dotling backup list`.
-- Prune old backups using `dotling backup clean [--keep-last N] [--older-than DAYS]`. By default, clean keeps the 10 most recent sessions.
-
-### Conflict Resolution & Three-way Merge
+### Three-way Merge
 
 When sync detects a conflict between the repository and your local target, you can choose from the following interactive options:
 
 - `[s]` Show diff: Compare inline changes.
 - `[k]` Keep Local: Overwrite the repository with your local file (pulls to repo).
-- `[r]` Use Repo: Overwrite the local file with the repository version (pushes to local, backs up the local file first).
+- `[r]` Use Repo: Overwrite the local file with the repository version (pushes to local).
 - `[m]` Merge: Performs a standard line-level **three-way merge** using the last-in-sync snapshot as the base, combining modifications from both the repo (ours) and local target (theirs). Non-overlapping changes are cleanly auto-merged, while overlapping conflicts are highlighted with standard git conflict markers:
   ```text
   <<<<<<< repo
@@ -514,7 +501,7 @@ Previously, encrypted entries had to be decrypted to verify their sync state. do
 - After each successful sync, dotling records the content hashes of the `.enc` ciphertext and the local plaintext target.
 - On subsequent `status` or `sync` checks, dotling compares current file hashes against the stored fingerprint.
 - **Benefits:** You can run `dotling status` or `dotling sync --dry-run` to audit your system instantly, without entering your vault password. A password is only requested when actual file modifications need to be decrypted or re-encrypted!
-- For copy-mode plain files, fingerprints track both repo source and target file hashes, enabling deterministic detection of which side has changed.
+- For copy-mode plain files and template entries, fingerprints track both repo source and target file hashes, enabling deterministic detection of which side has changed.
 
 ## Shell Completions
 
@@ -578,7 +565,6 @@ dotling stores all state under `~/.dotling/`:
 | `vars.toml` | Machine-local template variables (never committed) |
 | `fingerprints.toml` | Sync fingerprint store for change detection |
 | `vault/` | Encryption vault (`identity.enc`, `config.toml`) |
-| `backups/` | Chronological backup sessions |
 | `snapshots/` | Plaintext snapshots used as merge base for three-way merge |
 | `state/trusted_hooks` | Blake2s-256 hashes of trusted hook commands |
 | `tmp/` | Secure temp files for encrypted file editing (auto-cleaned) |

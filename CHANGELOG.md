@@ -6,6 +6,24 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
 
 ---
 
+## v0.8.0
+
+### Changed
+
+- **Vault export/import — single encrypted bundle format** — `vault export` now writes a single encrypted bundle file instead of copying raw vault files. `vault import` decrypts the bundle with your password and verifies the identity before writing. Old directory-based bundles are no longer compatible; re-export from your source machine after upgrading.
+- **Encryption/decryption refactored** — `encrypt` and `decrypt` now operate in-place on tracked entries, consolidating file handling into shared helpers. Directory encryption uses the same pipeline as single-file encryption.
+- **Fingerprint tracking for template entries** — Templates now participate in the fingerprint store, enabling `status` and `sync --dry-run` to detect template drift without decrypting.
+
+### Removed
+
+- **Backup system** — Removed the `dotling backup` command, the `--backup` flag on `sync`, and all automatic backup-before-overwrite behavior. The `~/.dotling/backups/` directory is no longer created or managed by dotling.
+
+### Added
+
+- Comprehensive roundtrip tests for encryption and decryption, and a full template sync lifecycle test suite.
+
+---
+
 ## v0.7.0
 
 ### Added
