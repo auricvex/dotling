@@ -38,6 +38,7 @@
             pkgs.cargo-deny
             pkgs.just
             pkgs.just-lsp
+            pkgs.mdbook
           ];
         };
       }

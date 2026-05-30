@@ -19,7 +19,7 @@ dotling doctor
 - **Variable defaults** — config defaults that look like real values (not placeholders)
 - **Git initialization** — whether the repo is a git repository
 - **Vault initialization** — whether the vault is set up
-- **Orphaned entries** — entries in `dotling.toml` whose source files no longer exist
+- **Orphaned files** — files in the repo that aren't tracked by any entry in `dotling.toml`
 
 ## Examples
 

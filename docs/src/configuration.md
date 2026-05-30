@@ -83,12 +83,14 @@ Each tracked file or directory is an entry. The order in `dotling.toml` determin
 | `target` | string | Deploy target path with `~` support (required) |
 | `method` | string | Override: `"symlink"` or `"copy"` |
 | `encrypted` | boolean | `true`, `1`, or `yes` — marks entry as encrypted |
+| `directory` | boolean | `true`, `1`, or `yes` — marks entry as a directory |
+| `template` | boolean | `true`, `1`, or `yes` — marks entry as a template |
 | `os` | string | `"all"` (default), `"linux"`, `"macos"`, or `"windows"` |
 | `permissions` | string | Octal permissions applied on sync, e.g. `"0600"` |
 | `before` | string | Entry-level hook run before sync |
 | `after` | string | Entry-level hook run after sync |
 
-> **Note:** Template entries don't have a `template` field. A file is treated as a template when its `source` path ends with `.dtmpl` (e.g. `shell/zshrc.dtmpl`). This suffix is added automatically by `dotling add --template`.
+> **Note:** Template entries are marked with `template: true` in `dotling.toml` (set automatically by `dotling add --template`).
 
 ## Path Mapping
 
@@ -109,10 +111,10 @@ Files are organized into categories automatically when added:
 The mapping rules are:
 
 - `.config/*` files go to `config/`
-- Shell files (`.zshrc`, `.bashrc`, `.bash_profile`, `.profile`, `.zprofile`, `.zshenv`) go to `shell/`
+- Shell files (`.zshrc`, `.bashrc`, `.bash_profile`, `.profile`, `.zprofile`, `.zshenv`, `.fishrc`) go to `shell/`
 - Git files (`.gitconfig`, `.gitignore_global`) go to `git/`
-- Vim files (`.vimrc`, `.vim/`) go to `vim/`
-- Tmux files (`.tmux.conf`, `.tmux/`) go to `tmux/`
+- Vim files (`.vimrc`, `.gvimrc`) go to `vim/`
+- Tmux files (`.tmux.conf`) go to `tmux/`
 - SSH files (`.ssh/`) go to `ssh/`
 - GnuPG files (`.gnupg/`) go to `gnupg/`
 - Everything else goes to `home/`

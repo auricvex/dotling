@@ -12,7 +12,8 @@ dotling reads and respects the following environment variables.
 | `EDITOR` | Editor fallback |
 | `DOTLING_ALLOW_HOOKS` | Set to `1` or `true` to auto-trust and execute all hooks without prompting |
 | `DOTLING_NO_HOOKS` | Set to `1` or `true` to completely disable hook execution |
-| `HOSTNAME` | Fallback hostname for `dotling.hostname` built-in if the syscall fails |
+| `HOSTNAME` | Fallback hostname for `dotling.hostname` built-in if the syscall fails (Unix/Linux/macOS) |
+| `COMPUTERNAME` | Fallback hostname for `dotling.hostname` built-in on Windows |
 | `USER` / `USERNAME` | Used for `dotling.username` built-in (`USERNAME` is the Windows fallback) |
 
 ## Hook context variables

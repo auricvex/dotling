@@ -15,7 +15,7 @@ dotling init [PATH|URL]
 `dotling init` sets up a dotfiles repository. Depending on the argument:
 
 - **A local path** — creates the directory, writes a default `dotling.toml`, runs `git init`, and registers the repo root
-- **A git URL** — clones the repo to `~/dotfiles`, registers the repo root, and runs `dotling sync` to deploy all entries
+- **A git URL** — clones the repo to `~/dotfiles`, registers the repo root, and suggests running `dotling sync` to deploy entries
 
 After initialization, the repo root is stored in `~/.dotling/state.toml` so dotling knows where to find it.
 
@@ -26,7 +26,7 @@ After initialization, the repo root is stored in `~/.dotling/state.toml` so dotl
 3. Runs `git init` (for new repos)
 4. Registers the repo root in `~/.dotling/state.toml`
 5. Runs the `[hooks] init` command if defined
-6. For cloned repos: runs `dotling sync` to deploy all entries
+6. For cloned repos: suggests running `dotling sync` to deploy entries
 
 ## Examples
 

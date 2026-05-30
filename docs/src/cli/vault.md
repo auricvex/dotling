@@ -28,7 +28,7 @@ Display vault status and location.
 dotling vault show
 ```
 
-Shows whether a vault exists, its location, and creation date.
+Shows whether a vault exists and its location. Note: creation date is not currently displayed.
 
 ### `dotling vault export`
 
