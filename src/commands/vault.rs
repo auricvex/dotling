@@ -51,25 +51,31 @@ pub fn run_export(path: &std::path::Path) -> Result<()> {
         ));
     }
 
-    let password = ui::password("Vault password (to verify)");
-    // Verify password by unlocking
-    crypto::vault::unlock_vault(&password)?;
-
+    let password = ui::password("Vault password");
     crypto::vault::export_vault(path, &password)?;
 
     ui::success(&format!("vault exported to `{}`", path.display()));
     ui::hint("transfer this file to your new machine and run `dotling vault import <path>`");
+    ui::hint("import will ask for the same vault password");
 
     Ok(())
 }
 
 pub fn run_import(path: &std::path::Path) -> Result<()> {
+    if !path.exists() {
+        return Err(crate::error::Error::User(format!(
+            "bundle not found: `{}`",
+            path.display()
+        )));
+    }
+
     if crypto::vault::vault_exists() && !ui::confirm("vault already exists — overwrite?") {
         ui::info("import cancelled");
         return Ok(());
     }
 
-    crypto::vault::import_vault(path)?;
+    let password = ui::password("Vault password");
+    crypto::vault::import_vault(path, &password)?;
 
     ui::success("vault imported");
     ui::hint("run `dotling sync` to deploy your dotfiles");

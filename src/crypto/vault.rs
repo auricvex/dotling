@@ -74,44 +74,33 @@ pub fn unlock_vault(password: &str) -> Result<[u8; 32]> {
         .map_err(|_| Error::Vault("corrupted vault secret length".into()))
 }
 
-/// Export the vault directory to a bundle at `path`.
+/// Export the vault as a single encrypted bundle file at `path`.
 pub fn export_vault(path: &Path, password: &str) -> Result<()> {
     let _ = unlock_vault(password)?; // verify password
 
     let dir = vault_dir()?;
-    fs::create_dir_all(path).map_err(|e| Error::io(path, "create export directory", e))?;
+    let identity = fs::read(dir.join("identity.enc"))
+        .map_err(|e| Error::io(dir.join("identity.enc"), "read identity", e))?;
+    let config = fs::read(dir.join("config.toml"))
+        .map_err(|e| Error::io(dir.join("config.toml"), "read config", e))?;
 
-    for name in &["identity.enc", "config.toml"] {
-        let src = dir.join(name);
-        let dst = path.join(name);
-        if src.exists() {
-            fs::copy(&src, &dst).map_err(|e| Error::io(&src, "copy vault file", e))?;
-        }
-    }
-
-    Ok(())
+    write_bundle(path, password, &config, &identity)
 }
 
-/// Import a vault bundle from `path`.
-pub fn import_vault(path: &Path) -> Result<()> {
-    let identity_src = path.join("identity.enc");
-    if !identity_src.exists() {
-        return Err(Error::Vault(format!(
-            "no identity.enc found in `{}`",
-            path.display()
-        )));
-    }
+/// Import a vault bundle from `path`, decrypting with `password`.
+pub fn import_vault(path: &Path, password: &str) -> Result<()> {
+    let (config, identity) = read_bundle(path, password)?;
 
     let dir = vault_dir()?;
     fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, "create vault directory", e))?;
 
-    for name in &["identity.enc", "config.toml"] {
-        let src = path.join(name);
-        let dst = dir.join(name);
-        if src.exists() {
-            fs::copy(&src, &dst).map_err(|e| Error::io(&src, "import vault file", e))?;
-        }
-    }
+    crate::fs::atomic_write(&dir.join("identity.enc"), &identity)?;
+    crate::fs::atomic_write(&dir.join("config.toml"), &config)?;
+
+    // Verify the imported identity is valid
+    let identity_str = std::str::from_utf8(&identity)
+        .map_err(|_| Error::Vault("corrupted identity content in bundle".into()))?;
+    let _ = decrypt_identity(identity_str, password)?;
 
     Ok(())
 }
@@ -124,9 +113,103 @@ pub fn change_password(old_password: &str, new_password: &str) -> Result<()> {
     Ok(())
 }
 
+// ── Bundle helpers ───────────────────────────────────────────────
+
+/// Encrypt and write a vault bundle to `path`.
+fn write_bundle(path: &Path, password: &str, config: &[u8], identity: &[u8]) -> Result<()> {
+    let salt: [u8; SALT_LEN] = random_bytes();
+    let nonce_bytes: [u8; BUNDLE_NONCE_LEN] = random_bytes();
+
+    // Build plaintext payload: [config_len:4] [config] [identity]
+    let config_len =
+        u32::try_from(config.len()).map_err(|_| Error::Vault("config.toml too large".into()))?;
+    let mut payload = Vec::with_capacity(4 + config.len() + identity.len());
+    payload.extend_from_slice(&config_len.to_be_bytes());
+    payload.extend_from_slice(config);
+    payload.extend_from_slice(identity);
+
+    let key = derive_key(password, &salt)?;
+    let cipher = ChaCha20Poly1305::new(&key.into());
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, payload.as_ref())
+        .map_err(|e| Error::Vault(format!("bundle encryption failed: {e}")))?;
+
+    // Write: magic | version | salt | nonce | ciphertext+tag
+    let mut blob = Vec::with_capacity(HEADER_LEN + ciphertext.len());
+    blob.extend_from_slice(BUNDLE_MAGIC);
+    blob.push(BUNDLE_VERSION);
+    blob.extend_from_slice(&salt);
+    blob.extend_from_slice(&nonce_bytes);
+    blob.extend_from_slice(&ciphertext);
+
+    crate::fs::atomic_write(path, &blob)
+}
+
+/// Read and decrypt a vault bundle from `path`.
+///
+/// Returns `(config_content, identity_content)`.
+fn read_bundle(path: &Path, password: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+    let blob = fs::read(path).map_err(|e| Error::io(path, "read vault bundle", e))?;
+
+    let min_size = HEADER_LEN + TAG_LEN + 4;
+    if blob.len() < min_size {
+        return Err(Error::Vault(format!(
+            "bundle too small ({} bytes, expected at least {min_size})",
+            blob.len()
+        )));
+    }
+
+    if &blob[..8] != BUNDLE_MAGIC {
+        return Err(Error::Vault(
+            "invalid bundle format (bad magic bytes)".into(),
+        ));
+    }
+    if blob[8] != BUNDLE_VERSION {
+        return Err(Error::Vault(format!(
+            "unsupported bundle version: {}",
+            blob[8]
+        )));
+    }
+
+    let salt = &blob[9..9 + SALT_LEN];
+    let nonce_bytes = &blob[9 + SALT_LEN..9 + SALT_LEN + BUNDLE_NONCE_LEN];
+    let ciphertext = &blob[9 + SALT_LEN + BUNDLE_NONCE_LEN..];
+
+    let key = derive_key(password, salt)?;
+    let cipher = ChaCha20Poly1305::new(&key.into());
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| Error::Vault("incorrect password or corrupted bundle".into()))?;
+
+    if plaintext.len() < 4 {
+        return Err(Error::Vault("bundle payload too short".into()));
+    }
+
+    let config_len = u32::from_be_bytes(plaintext[..4].try_into().unwrap()) as usize;
+    if config_len > plaintext.len() - 4 {
+        return Err(Error::Vault("bundle payload truncated".into()));
+    }
+
+    let config = plaintext[4..4 + config_len].to_vec();
+    let identity = plaintext[4 + config_len..].to_vec();
+
+    Ok((config, identity))
+}
+
 // ── Internal helpers ──────────────────────────────────────────────
 
 const VAULT_HEADER: &str = "DOTLING-VAULT-V1";
+
+// Bundle format: single encrypted file for vault export/import.
+const BUNDLE_MAGIC: &[u8; 8] = b"DOTLVAUL";
+const BUNDLE_VERSION: u8 = 0x01;
+const SALT_LEN: usize = 32;
+const BUNDLE_NONCE_LEN: usize = 12;
+const TAG_LEN: usize = 16; // ChaCha20-Poly1305 AEAD tag
+const HEADER_LEN: usize = 8 + 1 + SALT_LEN + BUNDLE_NONCE_LEN; // 53
 
 /// Encrypt `secret` with `password` and write `identity.enc`.
 fn write_identity(dir: &Path, password: &str, secret: &[u8]) -> Result<()> {
@@ -238,18 +321,18 @@ mod tests {
     use super::*;
 
     /// Run a closure with HOME set to a temporary directory, then restore it.
-    fn with_temp_home(f: impl FnOnce(&Path)) {
+    fn with_temphome(f: impl FnOnce(&Path)) {
         let _guard = crate::core::ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let temp = tempfile::tempdir().unwrap();
-        let old_home = std::env::var_os("HOME");
+        let oldhome = std::env::var_os("HOME");
         // SAFETY: serialized via HOME_LOCK
         unsafe {
             std::env::set_var("HOME", temp.path());
         }
         f(temp.path());
-        match old_home {
+        match oldhome {
             Some(h) => unsafe {
                 std::env::set_var("HOME", h);
             },
@@ -260,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn vault_dir_is_under_home() {
+    fn vault_dir_is_underhome() {
         let dir = vault_dir().unwrap();
         assert!(dir.ends_with(".dotling/vault"));
     }
@@ -337,7 +420,7 @@ mod tests {
 
     #[test]
     fn vault_public_api() {
-        with_temp_home(|_home| {
+        with_temphome(|home| {
             // vault_exists before init
             assert!(!vault_exists());
 
@@ -371,15 +454,39 @@ mod tests {
             let key2 = unlock_vault("new-pass").unwrap();
             assert_eq!(key2.len(), 32);
 
-            // export and import
-            let export_dir = tempfile::tempdir().unwrap();
-            export_vault(export_dir.path(), "new-pass").unwrap();
-            assert!(export_dir.path().join("identity.enc").exists());
+            // export and import (single-file bundle)
+            let bundle_path = home.join("vault-backup.bin");
+            export_vault(&bundle_path, "new-pass").unwrap();
+            assert!(bundle_path.exists());
+            assert!(fs::metadata(&bundle_path).unwrap().len() > HEADER_LEN as u64);
 
             fs::remove_dir_all(&dir).unwrap();
-            import_vault(export_dir.path()).unwrap();
+            import_vault(&bundle_path, "new-pass").unwrap();
             let restored = unlock_vault("new-pass").unwrap();
             assert_eq!(key2, restored);
+
+            // import with wrong password fails
+            let bundle2 = home.join("vault-backup2.bin");
+            export_vault(&bundle2, "new-pass").unwrap();
+            fs::remove_dir_all(&dir).unwrap();
+            assert!(import_vault(&bundle2, "wrong-password").is_err());
+
+            // bundle has correct magic bytes
+            let raw = fs::read(&bundle2).unwrap();
+            assert_eq!(&raw[..8], b"DOTLVAUL");
+            assert_eq!(raw[8], 0x01);
+
+            // truncated bundle is rejected
+            let truncated = home.join("truncated.bin");
+            fs::write(&truncated, b"DOTLVAUL\x01").unwrap();
+            assert!(import_vault(&truncated, "any").is_err());
+
+            // wrong magic is rejected
+            let bad_magic = home.join("bad-magic.bin");
+            let mut bad_raw = raw.clone();
+            bad_raw[..8].copy_from_slice(b"WRONGMAG");
+            fs::write(&bad_magic, &bad_raw).unwrap();
+            assert!(import_vault(&bad_magic, "new-pass").is_err());
         });
     }
 }

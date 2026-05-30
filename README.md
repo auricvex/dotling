@@ -74,8 +74,6 @@ Download a prebuilt binary from the [latest GitHub release](https://github.com/a
 | Linux (aarch64) | `dotling-aarch64-linux.tar.gz` |
 | macOS (Intel) | `dotling-x86_64-macos.tar.gz` |
 | macOS (Apple Silicon) | `dotling-aarch64-macos.tar.gz` |
-| Windows (x86_64) | `dotling-x86_64-windows.zip` |
-| Windows (ARM64) | `dotling-aarch64-windows.zip` |
 
 ```sh
 # Example: Linux x86_64
@@ -342,8 +340,8 @@ Any file tracked with `--template` is stored in the repo as `<name>.dtmpl`. On e
 
 ```sh
 # 1. Set your machine-local variables (saved to ~/.dotling/vars.toml, never committed)
-dotling vars set hostname "Macbook-Air-Ade"
-dotling vars set primary_user "ade"
+dotling vars set hostname "Some hostname"
+dotling vars set primary_user "someuser"
 
 # 2. Add a file as a template
 dotling add ~/.config/nix-darwin/flake.nix --template
