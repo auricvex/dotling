@@ -17,7 +17,7 @@ pub mod crypto;
 // ── Sync engine ──────────────────────────────────────────────────
 
 pub mod sync;
-pub use sync::{backup, deploy, fingerprint, hooks, merge};
+pub use sync::{deploy, fingerprint, hooks, merge};
 
 // ── CLI & command dispatch ───────────────────────────────────────
 

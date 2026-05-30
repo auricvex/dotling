@@ -69,8 +69,7 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
 
-        /// Overwrite conflicting files without prompting (repo wins; local files
-        /// are backed up automatically).
+        /// Overwrite conflicting files without prompting (repo wins).
         #[arg(long)]
         force: bool,
 
@@ -83,11 +82,6 @@ pub enum Command {
         /// print a warning.  Useful in non-interactive environments (CI, scripts).
         #[arg(long)]
         no_interactive: bool,
-
-        /// Always back up the local file before any push that would overwrite it,
-        /// even when there is no conflict.
-        #[arg(long)]
-        backup: bool,
 
         /// Allow executing all hooks without prompting.
         #[arg(long)]
@@ -147,12 +141,6 @@ pub enum Command {
         action: VarsAction,
     },
 
-    /// Manage local file backups created by dotling before overwriting.
-    Backup {
-        #[command(subcommand)]
-        action: BackupAction,
-    },
-
     /// Generate shell completion scripts.
     #[command(
         long_about = "Generate shell completion scripts for the given shell.\n\n\
@@ -192,27 +180,6 @@ pub enum VaultAction {
     /// Change the vault password.
     #[command(name = "change-password")]
     ChangePassword,
-}
-
-#[derive(Subcommand)]
-pub enum BackupAction {
-    /// List all backup sessions.
-    List,
-
-    /// Remove old backup sessions.
-    ///
-    /// By default keeps the 10 most recent sessions.
-    /// At least one of --keep-last or --older-than must be supplied,
-    /// or the default of --keep-last 10 is used.
-    Clean {
-        /// Keep only the N most recent backup sessions.
-        #[arg(long, value_name = "N")]
-        keep_last: Option<usize>,
-
-        /// Delete backup sessions older than D days.
-        #[arg(long, value_name = "DAYS")]
-        older_than: Option<u64>,
-    },
 }
 
 #[derive(Subcommand)]

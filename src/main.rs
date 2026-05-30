@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use dotling::cli::{BackupAction, Cli, Command, VarsAction, VaultAction};
+use dotling::cli::{Cli, Command, VarsAction, VaultAction};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -33,7 +33,6 @@ fn run(cli: Cli) -> dotling::Result<()> {
             force,
             prefer_actual,
             no_interactive,
-            backup,
             allow_hooks,
             no_hooks,
         } => dotling::commands::sync::run(
@@ -41,7 +40,6 @@ fn run(cli: Cli) -> dotling::Result<()> {
             force,
             prefer_actual,
             no_interactive,
-            backup,
             allow_hooks,
             no_hooks,
         ),
@@ -72,14 +70,6 @@ fn run(cli: Cli) -> dotling::Result<()> {
             VarsAction::Check => dotling::commands::vars::run_check(),
             VarsAction::Import { path } => dotling::commands::vars::run_import(&path),
             VarsAction::Export => dotling::commands::vars::run_export(),
-        },
-
-        Command::Backup { action } => match action {
-            BackupAction::List => dotling::commands::backup::run_list(),
-            BackupAction::Clean {
-                keep_last,
-                older_than,
-            } => dotling::commands::backup::run_clean(keep_last, older_than),
         },
 
         Command::Completions { shell } => dotling::commands::completions::run(shell),

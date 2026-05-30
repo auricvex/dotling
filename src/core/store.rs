@@ -10,7 +10,6 @@ use crate::{
 
 const STATE_FILE: &str = "state.toml";
 const FINGERPRINTS_FILE: &str = "fingerprints.toml";
-const BACKUPS_DIR: &str = "backups";
 const SNAPSHOTS_DIR: &str = "snapshots";
 const VARS_FILE: &str = "vars.toml";
 
@@ -32,11 +31,6 @@ pub fn fingerprint_path() -> Result<PathBuf> {
 /// Path to the machine-local variable store: `~/.dotling/vars.toml`
 pub fn vars_path() -> Result<PathBuf> {
     Ok(state_dir()?.join(VARS_FILE))
-}
-
-/// Root directory for backup sessions: `~/.dotling/backups/`
-pub fn backup_dir() -> Result<PathBuf> {
-    Ok(state_dir()?.join(BACKUPS_DIR))
 }
 
 /// Root directory for plaintext snapshots: `~/.dotling/snapshots/`

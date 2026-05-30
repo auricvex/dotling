@@ -338,7 +338,7 @@ pub fn conflict_prompt(supports_merge: bool) -> ConflictChoice {
     let merge_hint = if supports_merge { " [m]erge" } else { "" };
     loop {
         print!(
-            "    {} [k]eep local  [r]epo (backup){merge_hint}  [d]iff  [s]kip > ",
+            "    {} [k]eep local  [r]epo{merge_hint}  [d]iff  [s]kip > ",
             paint(YELLOW, "?"),
         );
         io::stdout().flush().ok();
@@ -359,15 +359,6 @@ pub fn conflict_prompt(supports_merge: bool) -> ConflictChoice {
             }
         }
     }
-}
-
-/// Print a notice that a backup was made before overwriting.
-pub fn backup_notice(backup_path: &std::path::Path) {
-    println!(
-        "    {} backed up to {}",
-        paint(DIM, "↩"),
-        paint(DIM, &backup_path.display().to_string()),
-    );
 }
 
 /// Print a notice that a 3-way merge succeeded with conflict markers.

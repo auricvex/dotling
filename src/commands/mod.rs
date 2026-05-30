@@ -1,5 +1,4 @@
 pub mod add;
-pub mod backup;
 pub mod completions;
 pub mod doctor;
 pub mod edit;
