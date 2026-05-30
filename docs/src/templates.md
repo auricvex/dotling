@@ -4,7 +4,7 @@ Some dotfiles contain machine-specific values — a hostname in a Nix flake, a u
 
 ## How it works
 
-Any file tracked with `--template` is stored in the repo as `<name>.dtmpl`. On every `sync`, dotling renders the template and writes the output to the deploy target — the repo source is never deployed directly.
+Any file tracked with `--template` is marked with `template: true` in `dotling.toml`. On every `sync`, dotling renders the template and writes the output to the deploy target — the repo source is never deployed directly.
 
 ```sh
 # 1. Set your machine-local variables
@@ -131,7 +131,7 @@ The pipeline on sync is: **vault decrypt -> render with vars -> deploy**.
 
 ## Example
 
-Given this template at `config/nix-darwin/flake.nix.dtmpl`:
+Given this template at `config/nix-darwin/flake.nix`:
 
 ```nix
 {

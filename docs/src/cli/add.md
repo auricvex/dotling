@@ -33,7 +33,7 @@ Files are organized into categories in the repo. See [Path Mapping](../configura
 
 ### Directories
 
-When adding a directory, dotling recursively moves all files and creates the corresponding entries. Each file in the directory becomes a separate entry in `dotling.toml`.
+When adding a directory, dotling tracks it as a single entry in `dotling.toml` with `directory: true`. The entire directory is moved into the repo and deployed as a unit (symlink or copy).
 
 ### Encryption
 
@@ -41,7 +41,7 @@ With `--encrypt`, the file is encrypted using the vault's master key before bein
 
 ### Templates
 
-With `--template`, the source file is renamed with a `.dtmpl` suffix in the repo. On each `sync`, dotling renders the template with variables and writes the output to the target. See [Templates](../templates.md) for syntax details.
+With `--template`, the source file is tracked as a template (using the `template: true` field in `dotling.toml`). On each `sync`, dotling renders the template with variables and writes the output to the target. See [Templates](../templates.md) for syntax details.
 
 ### OS restriction
 

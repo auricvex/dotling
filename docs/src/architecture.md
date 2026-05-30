@@ -23,7 +23,7 @@ dotling
 │   └── vault              Vault management: init, unlock, export, import
 │
 ├── sync/                  Sync and deployment
-│   ├── mod.rs             Re-exports submodules
+│   ├── mod.rs             Sync orchestration
 │   ├── deploy             Entry deployment: symlink/copy, state checking
 │   ├── fingerprint        Blake2s-256 content hashing for change detection
 │   ├── hooks              Lifecycle hooks with trust verification
@@ -110,4 +110,4 @@ No serde. No async runtime. Minimal by design.
 
 ## Testing
 
-Tests are inline `#[cfg(test)] mod tests` blocks across 15 files (94 tests total). Uses `tempfile` for temporary directories and `serial_test` for tests that mutate environment variables.
+Tests are inline `#[cfg(test)] mod tests` blocks across 15 files (94 tests total). Uses `tempfile` for temporary directories. Tests that mutate environment variables use a shared `Mutex` guard pattern to prevent interference.

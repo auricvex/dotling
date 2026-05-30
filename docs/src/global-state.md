@@ -34,6 +34,7 @@ repo = "/home/user/dotfiles"
 Machine-local template variables. These override `[vars]` defaults in `dotling.toml` and are never committed to git:
 
 ```toml
+[vars]
 hostname = "work-laptop"
 primary_user = "alice"
 ```

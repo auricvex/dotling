@@ -237,12 +237,14 @@ os = "linux"
 | `target` | string | Deploy target path with `~` support (required) |
 | `method` | string | Override: `"symlink"` or `"copy"` |
 | `encrypted` | boolean | `true`, `1`, or `yes` — marks entry as encrypted |
+| `directory` | boolean | `true`, `1`, or `yes` — marks entry as a directory |
+| `template` | boolean | `true`, `1`, or `yes` — marks entry as a template |
 | `os` | string | `"all"` (default), `"linux"`, `"macos"`, or `"windows"` |
 | `permissions` | string | Octal permissions applied on sync, e.g. `"0600"` |
 | `before` | string | Entry-level hook run before sync |
 | `after` | string | Entry-level hook run after sync |
 
-> **Note:** Template entries don't have a `template` field. A file is treated as a template when its `source` path ends with `.dtmpl` (e.g. `shell/zshrc.dtmpl`). This suffix is added automatically by `dotling add --template`.
+> **Note:** Template entries are marked with `template: true` in `dotling.toml` (set automatically by `dotling add --template`).
 
 ### Multi-OS Support
 
@@ -472,7 +474,6 @@ If a hook command exits with a non-zero status, dotling automatically retries it
 
 When sync detects a conflict between the repository and your local target, you can choose from the following interactive options:
 
-- `[s]` Show diff: Compare inline changes.
 - `[k]` Keep Local: Overwrite the repository with your local file (pulls to repo).
 - `[r]` Use Repo: Overwrite the local file with the repository version (pushes to local).
 - `[m]` Merge: Performs a standard line-level **three-way merge** using the last-in-sync snapshot as the base, combining modifications from both the repo (ours) and local target (theirs). Non-overlapping changes are cleanly auto-merged, while overlapping conflicts are highlighted with standard git conflict markers:
@@ -484,7 +485,8 @@ When sync detects a conflict between the repository and your local target, you c
   >>>>>>> actual
   ```
   The merge outcome is written back to both the local disk and the repository, resolving the conflict.
-- `[x]` Skip: Leave this entry unresolved and continue.
+- `[d]` Diff: Show inline changes between the repo and local file.
+- `[s]` Skip: Leave this entry unresolved and continue.
 
 Conflict types dotling detects:
 

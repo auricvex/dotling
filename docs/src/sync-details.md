@@ -35,11 +35,11 @@ When sync detects a conflict between the repository and your local target, you c
 
 | Option | Key | Description |
 |---|---|---|
-| Show diff | `s` | Compare inline changes |
 | Keep Local | `k` | Overwrite the repo with your local file (pulls to repo) |
 | Use Repo | `r` | Overwrite the local file with the repo version (pushes to local) |
 | Merge | `m` | Perform a three-way merge (see below) |
-| Skip | `x` | Leave this entry unresolved and continue |
+| Diff | `d` | Compare inline changes |
+| Skip | `s` | Leave this entry unresolved and continue |
 
 ### Three-way merge
 

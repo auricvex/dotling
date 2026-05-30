@@ -6,6 +6,10 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
 
 ---
 
+## v0.9.0 (Unreleased)
+
+---
+
 ## v0.8.0
 
 ### Changed
@@ -61,7 +65,7 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
   - Encrypted entries are decrypted to a secure temp file, opened in your editor, then re-encrypted on save.
   - Plain, copy, and template entries open the repo source directly.
   - Lookup by source path, target path, or partial match.
-  - Editor priority: `$DOTLING_EDITOR` → `$VISUAL` → `$EDITOR` → `vim` → `nano`.
+  - Editor priority: `$DOTLING_EDITOR` → `$VISUAL` → `$EDITOR` → `vim` → `nano` → `vi`.
   - Run `dotling sync` afterward to deploy your changes.
 
 ### Fixed
@@ -75,13 +79,13 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
 ### Added
 
 - **Dotfile templating** (`dotling add --template`, `dotling vars`)
-  - Render machine-specific values into your dotfiles automatically. Source files use `.dtmpl` suffix and are rendered on every `sync`.
+  - Render machine-specific values into your dotfiles automatically. Source files are marked as templates and rendered on every `sync`.
   - **Template syntax** — `{{ var.key }}` for custom variables, `{{ dotling.hostname }}` / `username` / `os` / `arch` / `home` / `repo` for built-ins, `{{ env.VAR }}` for environment variables.
   - **Pipe filters** — `upper`, `lower`, `trim`, `quote`, `squote`, `default:fallback` (e.g. `{{ var.name | upper }}`).
   - **Whitespace control** — `{{- expr -}}` strips surrounding whitespace.
   - **Hard errors on missing variables** — `sync` and `add` abort with a helpful message and hint to run `dotling vars set`.
   - **Variable storage** — Per-machine values in `~/.dotling/vars.toml` (never committed). Shared defaults in `[vars]` in `dotling.toml` (committed). Local values win.
-  - **`dotling add <path> --template`** — Validates syntax, copies as `.dtmpl`, renders immediately, and deploys. Combine with `--encrypt` to store encrypted.
+  - **`dotling add <path> --template`** — Validates syntax, tracks as a template, renders immediately, and deploys. Combine with `--encrypt` to store encrypted.
   - **`dotling vars`** subcommand with seven actions:
     - `list` — all resolved variables with their source.
     - `set <key> <value>` — save a machine-local variable.
