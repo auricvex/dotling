@@ -1,0 +1,18 @@
+[book]
+title = "dotling documentation"
+authors = ["Ade M Ramdani"]
+description = "A dotfiles management CLI — track, link, and sync your config files across machines"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/auricvex/dotling"
+edit-url-template = "https://github.com/auricvex/dotling/edit/main/docs/{path}"
+
+[output.html.search]
+enable = true

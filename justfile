@@ -76,6 +76,14 @@ ci: fmt-check clippy test deny audit
     @echo "   All local CI checks passed successfully! 🎉  "
     @echo "================================================="
 
+# Build the documentation site
+docs-build:
+    mdbook build docs
+
+# Serve the documentation locally with live reload
+docs-serve:
+    mdbook serve docs
+
 # Clean build artifacts
 clean:
     cargo clean
