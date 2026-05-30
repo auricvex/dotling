@@ -3,8 +3,7 @@
 pub mod core;
 
 // Re-export core submodules at crate root so existing paths resolve
-pub use core::{error, fs, path};
-pub(crate) use core::{platform, store};
+pub use core::{error, fs, path, platform, store};
 
 // ── Configuration & templating ───────────────────────────────────
 
@@ -18,8 +17,7 @@ pub mod crypto;
 // ── Sync engine ──────────────────────────────────────────────────
 
 pub mod sync;
-pub use sync::hooks;
-pub(crate) use sync::{backup, deploy, fingerprint, merge};
+pub use sync::{backup, deploy, fingerprint, hooks, merge};
 
 // ── CLI & command dispatch ───────────────────────────────────────
 

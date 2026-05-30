@@ -69,21 +69,22 @@ pub fn run(show_diff: bool) -> Result<()> {
                 crate::deploy::EntryState::Deployed => {
                     ok_count += 1;
                     if entry.template {
-                        // Template: check if deployed file matches the last rendered fingerprint.
-                        // We use the source path (template file) and target path.
+                        // Template: check if deployed rendered file matches the last sync.
+                        // Uses who_changed (source_hash + target_hash) since templates are
+                        // recorded via record_plain, not is_in_sync (which checks enc_hash).
                         let source_path = repo_root.join(&entry.source);
                         let badge = match crate::path::expand_tilde(Path::new(&entry.target)) {
                             Ok(target_path) => {
-                                match fp_store.is_in_sync(&entry.source, &source_path, &target_path)
-                                {
-                                    Some(true) => SyncBadge::InSync,
-                                    Some(false) => {
-                                        warning_count += 1;
-                                        ok_count -= 1;
-                                        SyncBadge::NeedsSync
-                                    }
-                                    None => {
-                                        // Never synced — treat as needs sync
+                                match fp_store.who_changed(
+                                    &entry.source,
+                                    &source_path,
+                                    &target_path,
+                                ) {
+                                    crate::fingerprint::WhichSide::Neither => SyncBadge::InSync,
+                                    crate::fingerprint::WhichSide::Unknown
+                                    | crate::fingerprint::WhichSide::RepoOnly
+                                    | crate::fingerprint::WhichSide::ActualOnly
+                                    | crate::fingerprint::WhichSide::Both => {
                                         warning_count += 1;
                                         ok_count -= 1;
                                         SyncBadge::NeedsSync

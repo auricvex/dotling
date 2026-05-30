@@ -85,6 +85,11 @@ impl FingerprintStore {
         }
     }
 
+    /// Check whether a fingerprint record exists for `source`.
+    pub fn has_record(&self, source: &str) -> bool {
+        self.records.contains_key(source)
+    }
+
     /// Compute and store hashes for `source` using the current on-disk
     /// contents of `enc_path` and `target_path` (encrypted entries).
     ///

@@ -1,5 +1,5 @@
-pub(crate) mod backup;
-pub(crate) mod deploy;
-pub(crate) mod fingerprint;
+pub mod backup;
+pub mod deploy;
+pub mod fingerprint;
 pub mod hooks;
-pub(crate) mod merge;
+pub mod merge;
