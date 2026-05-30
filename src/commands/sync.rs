@@ -1052,7 +1052,20 @@ fn sync_template_entry(
     };
 
     if rendered_hash == current_hash && !current_hash.is_empty() {
-        // Already up-to-date
+        // Already up-to-date — but ensure a fingerprint exists and is fresh.
+        // The source file may have changed since the last sync (e.g. encrypt
+        // modified it in-place) without affecting rendered output. Update the
+        // fingerprint so status doesn't see a stale source hash.
+        let needs_fp_update = !fp_store.has_record(&entry.source)
+            || fp_store.who_changed(&entry.source, &source_path, &target_path)
+                != crate::fingerprint::WhichSide::Neither;
+        if needs_fp_update
+            && fp_store
+                .record_plain(&entry.source, &source_path, &target_path)
+                .is_ok()
+        {
+            *fp_dirty = true;
+        }
         return Ok(false);
     }
 
