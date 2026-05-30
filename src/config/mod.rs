@@ -53,8 +53,7 @@ pub struct Entry {
     pub encrypted: bool,
     /// Whether this is a directory entry.
     pub directory: bool,
-    /// Whether this is a template entry (source ends with `.dtmpl`).
-    /// Inferred from `source` at parse time — not stored in TOML.
+    /// Whether this is a template entry, explicitly set in TOML config.
     pub template: bool,
     /// OS restriction (e.g., `"linux"`, `"macos"`). `None` means all.
     pub os: Option<String>,
@@ -343,6 +342,7 @@ fn handle_kv(
                 "method" => builder.method = Some(value.to_string()),
                 "encrypted" => builder.encrypted = parse_bool(value),
                 "directory" => builder.directory = parse_bool(value),
+                "template" => builder.template = parse_bool(value),
                 "os" => builder.os = Some(value.to_string()),
                 "permissions" => {
                     builder.permissions = u32::from_str_radix(value, 8).ok();
@@ -375,6 +375,7 @@ struct EntryBuilder {
     method: Option<String>,
     encrypted: bool,
     directory: bool,
+    template: bool,
     os: Option<String>,
     permissions: Option<u32>,
     before: Option<String>,
@@ -410,13 +411,7 @@ impl EntryBuilder {
             method,
             encrypted: self.encrypted,
             directory: self.directory,
-            // Infer template from the .dtmpl suffix — never stored in TOML.
-            // A source can be "foo.dtmpl" (plain) or "foo.dtmpl.enc" (encrypted),
-            // so we must check whether *any* component ends with ".dtmpl".
-            template: std::path::Path::new(&source)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("dtmpl"))
-                || source.ends_with(".dtmpl.enc"),
+            template: self.template,
             os: self.os,
             permissions: self.permissions,
             before: self.before,
@@ -532,8 +527,9 @@ fn serialize_config(config: &Config) -> String {
         if entry.directory {
             let _ = writeln!(out, "directory = true");
         }
-        // Note: `template` is intentionally NOT serialized — it is inferred
-        // from the `.dtmpl` suffix in `source` at load time.
+        if entry.template {
+            let _ = writeln!(out, "template = true");
+        }
         if let Some(ref os) = entry.os {
             let _ = writeln!(out, "os = \"{os}\"");
         }

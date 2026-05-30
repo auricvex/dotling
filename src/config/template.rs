@@ -116,13 +116,6 @@ impl RenderContext {
 
 // ── Public API ─────────────────────────────────────────────────────
 
-/// Returns true if a source path is a template (ends with `.dtmpl`).
-pub fn is_template_source(source: &str) -> bool {
-    std::path::Path::new(source)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("dtmpl"))
-}
-
 /// Render a template string with the given context.
 ///
 /// Returns the fully rendered string, or an `Error::Template` if any
@@ -561,14 +554,6 @@ mod tests {
         let src = "{{ var.x }} {{ var.x }} {{ var.y }}";
         let vars = scan_variables(src);
         assert_eq!(vars.len(), 2);
-    }
-
-    #[test]
-    fn is_template_source_check() {
-        assert!(is_template_source("config/nvim/init.lua.dtmpl"));
-        assert!(is_template_source("shell/zshrc.dtmpl"));
-        assert!(!is_template_source("shell/zshrc"));
-        assert!(!is_template_source("shell/zshrc.enc"));
     }
 
     #[test]

@@ -94,11 +94,7 @@ pub fn run(show_diff: bool) -> Result<()> {
                         };
                         (ui::Status::Template, badge)
                     } else if entry.encrypted {
-                        let enc_path = if entry.directory {
-                            repo_root.join(&entry.source)
-                        } else {
-                            repo_root.join(format!("{}.enc", entry.source))
-                        };
+                        let enc_path = repo_root.join(&entry.source);
                         let badge = match crate::path::expand_tilde(Path::new(&entry.target)) {
                             Ok(target_path) => {
                                 match fp_store.is_in_sync(&entry.source, &enc_path, &target_path) {

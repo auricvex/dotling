@@ -42,7 +42,7 @@ pub enum Command {
         #[arg(long)]
         copy: bool,
 
-        /// Track as a template (.dtmpl): rendered on each sync with
+        /// Track as a template: rendered on each sync with
         /// machine-local variables from `~/.dotling/vars.toml`.
         #[arg(long)]
         template: bool,
