@@ -44,12 +44,7 @@ fn make_dir_entry(source: &str, target: &str, encrypted: bool) -> Entry {
     }
 }
 
-/// Primary bug catcher: template encrypt→decrypt roundtrip.
-///
-/// This catches the bug where `run_decrypt` had `enc_path == source_path`
-/// for template entries (both resolved to `entry.source` which already
-/// contained `.enc`), causing the decrypted file to be written then
-/// immediately deleted.
+/// Template encrypt→decrypt roundtrip: files stay in-place.
 #[test]
 fn template_encrypt_decrypt_roundtrip() {
     let temp = tempfile::tempdir().unwrap();
@@ -67,12 +62,9 @@ fn template_encrypt_decrypt_roundtrip() {
     encrypt_single_entry(&mut entry, &repo, &key).unwrap();
     assert!(entry.encrypted);
 
-    // After encrypt: .dtmpl should be gone, .dtmpl.enc should exist
-    assert!(!repo.join("shell/zshrc.dtmpl").exists());
-    assert!(repo.join("shell/zshrc.dtmpl.enc").exists());
-
-    // Verify encrypted content is valid
-    let enc = fs::read(repo.join("shell/zshrc.dtmpl.enc")).unwrap();
+    // After encrypt: file stays in-place with encrypted content
+    let enc = fs::read(repo.join("shell/zshrc.dtmpl")).unwrap();
+    assert!(dotling::crypto::is_encrypted_content(&enc));
     let dec = dotling::crypto::decrypt_with_key(&enc, &key).unwrap();
     assert_eq!(dec, original);
 
@@ -80,15 +72,7 @@ fn template_encrypt_decrypt_roundtrip() {
     decrypt_single_entry(&mut entry, &repo, &key).unwrap();
     assert!(!entry.encrypted);
 
-    // After decrypt: .dtmpl.enc should be gone, .dtmpl should exist with original content
-    assert!(
-        !repo.join("shell/zshrc.dtmpl.enc").exists(),
-        ".enc file should be removed after decryption"
-    );
-    assert!(
-        repo.join("shell/zshrc.dtmpl").exists(),
-        "decrypted .dtmpl file should exist"
-    );
+    // After decrypt: file is back to plaintext in-place
     let content = fs::read(repo.join("shell/zshrc.dtmpl")).unwrap();
     assert_eq!(
         content, original,
@@ -96,8 +80,7 @@ fn template_encrypt_decrypt_roundtrip() {
     );
 }
 
-/// Template encrypt→decrypt with source already containing .dec (direct bug
-/// reproduction).
+/// Template encrypt→decrypt with source already containing .enc.
 #[test]
 fn template_encrypt_decrypt_with_enc_in_source() {
     let temp = tempfile::tempdir().unwrap();
@@ -107,10 +90,10 @@ fn template_encrypt_decrypt_with_enc_in_source() {
     let key = test_key();
     let original = b"{{ var.name }}";
 
-    // Simulate an entry where source already has .enc (as set by `add --encrypt`)
-    let enc_path = repo.join("shell/zshrc.dtmpl.enc");
+    // Encrypted content stored at the source path in-place
+    let source_path = repo.join("shell/zshrc.dtmpl.enc");
     let encrypted = dotling::crypto::encrypt_with_key(original, &key).unwrap();
-    dotling::fs::atomic_write(&enc_path, &encrypted).unwrap();
+    dotling::fs::atomic_write(&source_path, &encrypted).unwrap();
 
     let mut entry = make_entry("shell/zshrc.dtmpl.enc", "~/.zshrc", true, true);
 
@@ -118,16 +101,11 @@ fn template_encrypt_decrypt_with_enc_in_source() {
     decrypt_single_entry(&mut entry, &repo, &key).unwrap();
     assert!(!entry.encrypted);
 
-    // The .enc file should be removed
-    assert!(!enc_path.exists());
-
-    // The plaintext should exist at the correct path
-    let plain_path = repo.join("shell/zshrc.dtmpl");
-    assert!(plain_path.exists());
-    assert_eq!(fs::read(&plain_path).unwrap(), original);
+    // Decrypted in-place
+    assert_eq!(fs::read(&source_path).unwrap(), original);
 }
 
-/// Plain file encrypt→decrypt roundtrip.
+/// Plain file encrypt→decrypt roundtrip: files stay in-place.
 #[test]
 fn plain_file_encrypt_decrypt_roundtrip() {
     let temp = tempfile::tempdir().unwrap();
@@ -143,17 +121,17 @@ fn plain_file_encrypt_decrypt_roundtrip() {
     // Encrypt
     encrypt_single_entry(&mut entry, &repo, &key).unwrap();
     assert!(entry.encrypted);
-    assert!(!repo.join("shell/zshrc").exists());
-    assert!(repo.join("shell/zshrc.enc").exists());
+    // File stays in-place with encrypted content
+    let enc = fs::read(repo.join("shell/zshrc")).unwrap();
+    assert!(dotling::crypto::is_encrypted_content(&enc));
 
     // Decrypt
     decrypt_single_entry(&mut entry, &repo, &key).unwrap();
     assert!(!entry.encrypted);
-    assert!(!repo.join("shell/zshrc.enc").exists());
     assert_eq!(fs::read(repo.join("shell/zshrc")).unwrap(), original);
 }
 
-/// Directory encrypt→decrypt roundtrip.
+/// Directory encrypt→decrypt roundtrip: files stay in-place.
 #[test]
 fn directory_encrypt_decrypt_roundtrip() {
     let temp = tempfile::tempdir().unwrap();
@@ -171,9 +149,16 @@ fn directory_encrypt_decrypt_roundtrip() {
     // Encrypt
     encrypt_single_entry(&mut entry, &repo, &key).unwrap();
     assert!(entry.encrypted);
-    assert!(dir.join("id_rsa.enc").exists());
-    assert!(dir.join("id_rsa.pub.enc").exists());
-    assert!(dir.join("sub/config.enc").exists());
+    // Files stay in-place with encrypted content
+    assert!(dotling::crypto::is_encrypted_content(
+        &fs::read(dir.join("id_rsa")).unwrap()
+    ));
+    assert!(dotling::crypto::is_encrypted_content(
+        &fs::read(dir.join("id_rsa.pub")).unwrap()
+    ));
+    assert!(dotling::crypto::is_encrypted_content(
+        &fs::read(dir.join("sub/config")).unwrap()
+    ));
 
     // Decrypt
     decrypt_single_entry(&mut entry, &repo, &key).unwrap();

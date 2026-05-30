@@ -105,7 +105,7 @@ pub fn run(
 ///
 /// Pipeline:
 /// 1. Validate template syntax and warn if no `{{ }}` tags found.
-/// 2. Rename/copy source into repo as `<mapped>.dtmpl` (or `.dtmpl.enc`).
+/// 2. Copy source into repo at the mapped path.
 /// 3. Remove the original file.
 /// 4. Render the template immediately and write rendered output to target.
 #[allow(clippy::too_many_arguments)]
@@ -134,12 +134,8 @@ fn add_template_file(
     let target = path::collapse_tilde(file_path);
     let target_str = target.to_string_lossy().to_string();
 
-    // Source in repo: append .dtmpl (and .enc if encrypting)
-    let source_str = if encrypt {
-        format!("{}.dtmpl.enc", repo_relative.to_string_lossy())
-    } else {
-        format!("{}.dtmpl", repo_relative.to_string_lossy())
-    };
+    // Source in repo: use the mapped path as-is
+    let source_str = repo_relative.to_string_lossy().to_string();
 
     let repo_dest = repo_root.join(&source_str);
 
@@ -161,7 +157,7 @@ fn add_template_file(
         None
     };
 
-    // Add to config (template = true because source ends with .dtmpl)
+    // Add to config (template = true because --template flag was passed)
     let entry = Entry {
         source: source_str.clone(),
         target: target_str.clone(),
@@ -285,11 +281,7 @@ fn add_file(
     let source_str = repo_relative.to_string_lossy().to_string();
 
     // Check if the source already exists in the repo
-    let repo_dest = if encrypt {
-        repo_root.join(format!("{source_str}.enc"))
-    } else {
-        repo_root.join(&source_str)
-    };
+    let repo_dest = repo_root.join(&source_str);
 
     // Move the file into the repo
     let master_key = if encrypt {
@@ -469,7 +461,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Recursively encrypt all files in `dir` in-place (each file → file.enc).
+/// Recursively encrypt all files in `dir` in-place.
 fn encrypt_dir_recursive(dir: &Path, key: &[u8; 32]) -> Result<()> {
     for entry in fs::read_dir(dir).map_err(|e| Error::io(dir, "read directory", e))? {
         let entry = entry.map_err(|e| Error::io(dir, "read directory entry", e))?;
@@ -478,25 +470,18 @@ fn encrypt_dir_recursive(dir: &Path, key: &[u8; 32]) -> Result<()> {
         if path.is_dir() {
             encrypt_dir_recursive(&path, key)?;
         } else {
-            if path.extension().and_then(|e| e.to_str()) == Some("enc") {
+            let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
+            if crate::crypto::is_encrypted_content(&content) {
                 continue;
             }
-
-            let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
             let encrypted = crate::crypto::encrypt_with_key(&content, key)?;
-
-            let enc_path = match path.extension().and_then(|e| e.to_str()) {
-                Some(ext) => path.with_extension(format!("{ext}.enc")),
-                None => path.with_extension("enc"),
-            };
-            crate::fs::atomic_write(&enc_path, &encrypted)?;
-            fs::remove_file(&path).map_err(|e| Error::io(&path, "remove plaintext", e))?;
+            crate::fs::atomic_write(&path, &encrypted)?;
         }
     }
     Ok(())
 }
 
-/// Recursively copy `src` → `dst`, decrypting `.enc` files back to plaintext.
+/// Recursively copy `src` → `dst`, decrypting encrypted files back to plaintext.
 fn copy_dir_and_decrypt(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<()> {
     fs::create_dir_all(dst).map_err(|e| Error::io(dst, "create directory", e))?;
 
@@ -508,27 +493,23 @@ fn copy_dir_and_decrypt(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<()> {
         if src_path.is_dir() {
             let dst_path = dst.join(&file_name);
             copy_dir_and_decrypt(&src_path, &dst_path, key)?;
-        } else if src_path.extension().and_then(|e| e.to_str()) == Some("enc") {
-            // Decrypt and write without the .enc extension
-            let encrypted =
-                fs::read(&src_path).map_err(|e| Error::io(&src_path, "read encrypted", e))?;
-            let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
-
-            // Strip .enc from the destination filename
-            let dst_name = Path::new(&file_name).with_extension("");
-            let dst_path = dst.join(dst_name);
-            crate::fs::atomic_write(&dst_path, &plaintext)?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(0o600);
-                fs::set_permissions(&dst_path, perms).ok();
-            }
         } else {
-            // Plain file, just copy
+            let content = fs::read(&src_path).map_err(|e| Error::io(&src_path, "read", e))?;
             let dst_path = dst.join(&file_name);
-            crate::fs::copy_file(&src_path, &dst_path)?;
+
+            if crate::crypto::is_encrypted_content(&content) {
+                let plaintext = crate::crypto::decrypt_with_key(&content, key)?;
+                crate::fs::atomic_write(&dst_path, &plaintext)?;
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let perms = std::fs::Permissions::from_mode(0o600);
+                    fs::set_permissions(&dst_path, perms).ok();
+                }
+            } else {
+                crate::fs::copy_file(&src_path, &dst_path)?;
+            }
         }
     }
     Ok(())

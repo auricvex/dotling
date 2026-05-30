@@ -124,12 +124,8 @@ pub fn encrypt_single_entry(entry: &mut Entry, repo_root: &Path, key: &[u8; 32])
     let content = fs::read(&source_path).map_err(|e| Error::io(&source_path, "read", e))?;
     let encrypted = crate::crypto::encrypt_with_key(&content, key)?;
 
-    // Append .enc to the source path to get the encrypted file path.
-    let enc_path = repo_root.join(format!("{}.enc", entry.source));
-    crate::fs::atomic_write(&enc_path, &encrypted)?;
-
-    // Remove plaintext from repo
-    fs::remove_file(&source_path).map_err(|e| Error::io(&source_path, "remove plaintext", e))?;
+    // Write encrypted content in-place
+    crate::fs::atomic_write(&source_path, &encrypted)?;
 
     entry.encrypted = true;
     Ok(true)
@@ -157,36 +153,21 @@ pub fn decrypt_single_entry(entry: &mut Entry, repo_root: &Path, key: &[u8; 32])
         return Ok(true);
     }
 
-    // If source already ends with .enc, it IS the encrypted file path.
-    // Otherwise, the encrypted file has .enc appended.
-    #[allow(clippy::case_sensitive_file_extension_comparisons)]
-    let (enc_path, source_path) = if entry.source.ends_with(".enc") {
-        let plain = entry.source.strip_suffix(".enc").unwrap();
-        (repo_root.join(&entry.source), repo_root.join(plain))
-    } else {
-        (
-            repo_root.join(format!("{}.enc", entry.source)),
-            repo_root.join(&entry.source),
-        )
-    };
+    let source_path = repo_root.join(&entry.source);
 
-    if !enc_path.exists() {
+    if !source_path.exists() {
         return Err(Error::io(
-            &enc_path,
+            &source_path,
             "read encrypted",
             std::io::Error::new(std::io::ErrorKind::NotFound, "encrypted source not found"),
         ));
     }
 
-    let encrypted = fs::read(&enc_path).map_err(|e| Error::io(&enc_path, "read encrypted", e))?;
+    let encrypted =
+        fs::read(&source_path).map_err(|e| Error::io(&source_path, "read encrypted", e))?;
     let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
 
     crate::fs::atomic_write(&source_path, &plaintext)?;
-
-    // Remove encrypted file (only if it differs from source_path)
-    if enc_path != source_path {
-        fs::remove_file(&enc_path).map_err(|e| Error::io(&enc_path, "remove encrypted", e))?;
-    }
 
     entry.encrypted = false;
     Ok(true)
@@ -194,10 +175,9 @@ pub fn decrypt_single_entry(entry: &mut Entry, repo_root: &Path, key: &[u8; 32])
 
 // ── Directory helpers ─────────────────────────────────────────────
 
-/// Recursively encrypt all plaintext files in a directory.
+/// Recursively encrypt all plaintext files in a directory in-place.
 ///
-/// Each file `foo` becomes `foo.enc`; the original is removed.
-/// Already-encrypted `.enc` files are skipped.
+/// Already-encrypted files are skipped.
 /// Returns the number of files encrypted.
 fn encrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
     let mut count = 0usize;
@@ -208,29 +188,20 @@ fn encrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
         if path.is_dir() {
             count += encrypt_directory(&path, key)?;
         } else {
-            // Skip files that are already encrypted
-            if path.extension().and_then(|e| e.to_str()) == Some("enc") {
+            let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
+            if crate::crypto::is_encrypted_content(&content) {
                 continue;
             }
-
-            let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
             let encrypted = crate::crypto::encrypt_with_key(&content, key)?;
-
-            let enc_path = path.with_extension(match path.extension().and_then(|e| e.to_str()) {
-                Some(ext) => format!("{ext}.enc"),
-                None => "enc".to_string(),
-            });
-            crate::fs::atomic_write(&enc_path, &encrypted)?;
-            fs::remove_file(&path).map_err(|e| Error::io(&path, "remove plaintext", e))?;
+            crate::fs::atomic_write(&path, &encrypted)?;
             count += 1;
         }
     }
     Ok(count)
 }
 
-/// Recursively decrypt all `.enc` files in a directory.
+/// Recursively decrypt all encrypted files in a directory in-place.
 ///
-/// Each `foo.enc` is decrypted back to `foo`; the `.enc` file is removed.
 /// Returns the number of files decrypted.
 fn decrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
     let mut count = 0usize;
@@ -240,15 +211,13 @@ fn decrypt_directory(dir: &Path, key: &[u8; 32]) -> Result<usize> {
 
         if path.is_dir() {
             count += decrypt_directory(&path, key)?;
-        } else if path.extension().and_then(|e| e.to_str()) == Some("enc") {
-            let encrypted = fs::read(&path).map_err(|e| Error::io(&path, "read encrypted", e))?;
-            let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
-
-            // Strip the `.enc` extension to get the original path
-            let original_path = path.with_extension("");
-            // Handle double extensions like `foo.conf.enc` → `foo.conf`
-            crate::fs::atomic_write(&original_path, &plaintext)?;
-            fs::remove_file(&path).map_err(|e| Error::io(&path, "remove encrypted", e))?;
+        } else {
+            let content = fs::read(&path).map_err(|e| Error::io(&path, "read", e))?;
+            if !crate::crypto::is_encrypted_content(&content) {
+                continue;
+            }
+            let plaintext = crate::crypto::decrypt_with_key(&content, key)?;
+            crate::fs::atomic_write(&path, &plaintext)?;
             count += 1;
         }
     }
@@ -304,11 +273,10 @@ mod tests {
 
         let count = encrypt_directory(&dir, &test_key()).unwrap();
         assert_eq!(count, 1);
-        assert!(!dir.join("config.txt").exists());
-        assert!(dir.join("config.txt.enc").exists());
-
-        // Verify it's valid encrypted data
-        let enc = fs::read(dir.join("config.txt.enc")).unwrap();
+        // File stays in-place with encrypted content
+        assert!(dir.join("config.txt").exists());
+        let enc = fs::read(dir.join("config.txt")).unwrap();
+        assert!(crate::crypto::is_encrypted_content(&enc));
         let dec = crate::crypto::decrypt_with_key(&enc, &test_key()).unwrap();
         assert_eq!(dec, b"hello");
     }
@@ -318,15 +286,15 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("repo");
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("file.enc"), "already encrypted").unwrap();
+        // Write already-encrypted content (detected by header, not extension)
+        let key = test_key();
+        let already_enc = crate::crypto::encrypt_with_key(b"already encrypted", &key).unwrap();
+        fs::write(dir.join("file.dat"), &already_enc).unwrap();
         fs::write(dir.join("plain.txt"), "plaintext").unwrap();
 
-        let count = encrypt_directory(&dir, &test_key()).unwrap();
+        let count = encrypt_directory(&dir, &key).unwrap();
         assert_eq!(count, 1); // only plain.txt
-        assert_eq!(
-            fs::read(dir.join("file.enc")).unwrap(),
-            b"already encrypted"
-        );
+        assert_eq!(fs::read(dir.join("file.dat")).unwrap(), already_enc);
     }
 
     #[test]
@@ -337,8 +305,10 @@ mod tests {
         fs::write(dir.join("foo.conf"), "data").unwrap();
 
         encrypt_directory(&dir, &test_key()).unwrap();
-        assert!(dir.join("foo.conf.enc").exists());
-        assert!(!dir.join("foo.conf").exists());
+        // File stays in-place with encrypted content
+        assert!(dir.join("foo.conf").exists());
+        let enc = fs::read(dir.join("foo.conf")).unwrap();
+        assert!(crate::crypto::is_encrypted_content(&enc));
     }
 
     #[test]
@@ -351,8 +321,13 @@ mod tests {
 
         let count = encrypt_directory(&dir, &test_key()).unwrap();
         assert_eq!(count, 2);
-        assert!(dir.join("a.txt.enc").exists());
-        assert!(dir.join("sub/b.txt.enc").exists());
+        // Files stay in-place with encrypted content
+        assert!(crate::crypto::is_encrypted_content(
+            &fs::read(dir.join("a.txt")).unwrap()
+        ));
+        assert!(crate::crypto::is_encrypted_content(
+            &fs::read(dir.join("sub/b.txt")).unwrap()
+        ));
     }
 
     #[test]
@@ -375,11 +350,10 @@ mod tests {
 
         let key = test_key();
         let enc = crate::crypto::encrypt_with_key(b"hello", &key).unwrap();
-        fs::write(dir.join("config.txt.enc"), &enc).unwrap();
+        fs::write(dir.join("config.txt"), &enc).unwrap();
 
         let count = decrypt_directory(&dir, &key).unwrap();
         assert_eq!(count, 1);
-        assert!(!dir.join("config.txt.enc").exists());
         assert_eq!(fs::read(dir.join("config.txt")).unwrap(), b"hello");
     }
 
@@ -391,11 +365,10 @@ mod tests {
 
         let key = test_key();
         let enc = crate::crypto::encrypt_with_key(b"data", &key).unwrap();
-        fs::write(dir.join("foo.conf.enc"), &enc).unwrap();
+        fs::write(dir.join("foo.conf"), &enc).unwrap();
 
         decrypt_directory(&dir, &key).unwrap();
-        assert!(dir.join("foo.conf").exists());
-        assert!(!dir.join("foo.conf.enc").exists());
+        assert_eq!(fs::read(dir.join("foo.conf")).unwrap(), b"data");
     }
 
     #[test]
@@ -407,7 +380,7 @@ mod tests {
         let key = test_key();
         fs::write(dir.join("plain.txt"), "untouched").unwrap();
         let enc = crate::crypto::encrypt_with_key(b"secret", &key).unwrap();
-        fs::write(dir.join("secret.txt.enc"), &enc).unwrap();
+        fs::write(dir.join("secret.txt"), &enc).unwrap();
 
         let count = decrypt_directory(&dir, &key).unwrap();
         assert_eq!(count, 1);
@@ -424,8 +397,8 @@ mod tests {
         let key = test_key();
         let enc1 = crate::crypto::encrypt_with_key(b"aaa", &key).unwrap();
         let enc2 = crate::crypto::encrypt_with_key(b"bbb", &key).unwrap();
-        fs::write(dir.join("a.txt.enc"), &enc1).unwrap();
-        fs::write(dir.join("sub/b.txt.enc"), &enc2).unwrap();
+        fs::write(dir.join("a.txt"), &enc1).unwrap();
+        fs::write(dir.join("sub/b.txt"), &enc2).unwrap();
 
         let count = decrypt_directory(&dir, &key).unwrap();
         assert_eq!(count, 2);
@@ -447,8 +420,6 @@ mod tests {
 
     #[test]
     fn decrypt_template_enc_in_source() {
-        // BUG REPRODUCTION: entry.source = "shell/zshrc.dtmpl.enc", template=true
-        // enc_path and source_path must NOT be the same path
         let temp = tempfile::tempdir().unwrap();
         let repo = temp.path().join("repo");
         fs::create_dir_all(repo.join("shell")).unwrap();
@@ -457,9 +428,9 @@ mod tests {
         let plaintext = b"# template\n{{ var.name }}";
         let encrypted = crate::crypto::encrypt_with_key(plaintext, &key).unwrap();
 
-        // Write encrypted content at the path the config expects
-        let enc_path = repo.join("shell/zshrc.dtmpl.enc");
-        crate::fs::atomic_write(&enc_path, &encrypted).unwrap();
+        // Encrypted content stored at the source path in-place
+        let source_path = repo.join("shell/zshrc.dtmpl.enc");
+        crate::fs::atomic_write(&source_path, &encrypted).unwrap();
 
         let mut entry = make_entry("shell/zshrc.dtmpl.enc", "~/.zshrc", true, true);
 
@@ -468,22 +439,12 @@ mod tests {
         assert!(result.unwrap());
         assert!(!entry.encrypted);
 
-        // The .enc file should be removed
-        assert!(
-            !enc_path.exists(),
-            ".enc file should be removed after decryption"
-        );
-
-        // The plaintext file should exist at the correct path (.dtmpl, not .dtmpl.enc)
-        let plain_path = repo.join("shell/zshrc.dtmpl");
-        assert!(plain_path.exists(), "decrypted .dtmpl file should exist");
-        assert_eq!(fs::read(&plain_path).unwrap(), plaintext);
+        // Decrypted in-place at the same path
+        assert_eq!(fs::read(&source_path).unwrap(), plaintext);
     }
 
     #[test]
     fn decrypt_template_enc_not_in_source() {
-        // entry.source = "shell/zshrc.dtmpl" (no .enc in source)
-        // encrypted file at "shell/zshrc.dtmpl.enc"
         let temp = tempfile::tempdir().unwrap();
         let repo = temp.path().join("repo");
         fs::create_dir_all(repo.join("shell")).unwrap();
@@ -491,16 +452,16 @@ mod tests {
         let key = test_key();
         let plaintext = b"template content";
         let encrypted = crate::crypto::encrypt_with_key(plaintext, &key).unwrap();
-        let enc_path = repo.join("shell/zshrc.dtmpl.enc");
-        crate::fs::atomic_write(&enc_path, &encrypted).unwrap();
+        // Encrypted content stored at the source path in-place
+        let source_path = repo.join("shell/zshrc.dtmpl");
+        crate::fs::atomic_write(&source_path, &encrypted).unwrap();
 
         let mut entry = make_entry("shell/zshrc.dtmpl", "~/.zshrc", true, true);
         let result = decrypt_single_entry(&mut entry, &repo, &key);
         assert!(result.is_ok());
         assert!(!entry.encrypted);
-        assert!(!enc_path.exists());
-        let plain_path = repo.join("shell/zshrc.dtmpl");
-        assert_eq!(fs::read(&plain_path).unwrap(), plaintext);
+        // Decrypted in-place
+        assert_eq!(fs::read(&source_path).unwrap(), plaintext);
     }
 
     #[test]
@@ -512,15 +473,16 @@ mod tests {
         let key = test_key();
         let plaintext = b"zsh config";
         let encrypted = crate::crypto::encrypt_with_key(plaintext, &key).unwrap();
-        let enc_path = repo.join("shell/zshrc.enc");
-        crate::fs::atomic_write(&enc_path, &encrypted).unwrap();
+        // Encrypted content stored at the source path in-place
+        let source_path = repo.join("shell/zshrc");
+        crate::fs::atomic_write(&source_path, &encrypted).unwrap();
 
         let mut entry = make_entry("shell/zshrc", "~/.zshrc", false, true);
         let result = decrypt_single_entry(&mut entry, &repo, &key);
         assert!(result.is_ok());
         assert!(!entry.encrypted);
-        assert!(!enc_path.exists());
-        assert_eq!(fs::read(repo.join("shell/zshrc")).unwrap(), plaintext);
+        // Decrypted in-place
+        assert_eq!(fs::read(&source_path).unwrap(), plaintext);
     }
 
     #[test]
@@ -542,7 +504,8 @@ mod tests {
 
         let key = test_key();
         let enc = crate::crypto::encrypt_with_key(b"secret", &key).unwrap();
-        fs::write(dir_path.join("key.enc"), &enc).unwrap();
+        // Encrypted content stored in-place
+        fs::write(dir_path.join("key"), &enc).unwrap();
 
         let mut entry = make_dir_entry("secrets", "~/.secrets", true);
         let result = decrypt_single_entry(&mut entry, &repo, &key);
@@ -572,7 +535,8 @@ mod tests {
         let key_a = [0x11u8; 32];
         let key_b = [0x22u8; 32];
         let encrypted = crate::crypto::encrypt_with_key(b"secret", &key_a).unwrap();
-        crate::fs::atomic_write(&repo.join("shell/zshrc.enc"), &encrypted).unwrap();
+        // Encrypted content stored at the source path in-place
+        crate::fs::atomic_write(&repo.join("shell/zshrc"), &encrypted).unwrap();
 
         let mut entry = make_entry("shell/zshrc", "~/.zshrc", false, true);
         let result = decrypt_single_entry(&mut entry, &repo, &key_b);
@@ -596,11 +560,9 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap());
         assert!(entry.encrypted);
-        assert!(!repo.join("shell/zshrc.dtmpl").exists());
-        assert!(repo.join("shell/zshrc.dtmpl.enc").exists());
-
-        // Verify encrypted content can be decrypted
-        let enc = fs::read(repo.join("shell/zshrc.dtmpl.enc")).unwrap();
+        // File stays in-place with encrypted content
+        let enc = fs::read(repo.join("shell/zshrc.dtmpl")).unwrap();
+        assert!(crate::crypto::is_encrypted_content(&enc));
         let dec = crate::crypto::decrypt_with_key(&enc, &key).unwrap();
         assert_eq!(dec, plaintext);
     }
@@ -618,8 +580,9 @@ mod tests {
         let result = encrypt_single_entry(&mut entry, &repo, &key);
         assert!(result.is_ok());
         assert!(entry.encrypted);
-        assert!(!repo.join("shell/zshrc").exists());
-        assert!(repo.join("shell/zshrc.enc").exists());
+        // File stays in-place with encrypted content
+        let enc = fs::read(repo.join("shell/zshrc")).unwrap();
+        assert!(crate::crypto::is_encrypted_content(&enc));
     }
 
     #[test]
@@ -645,7 +608,9 @@ mod tests {
         let result = encrypt_single_entry(&mut entry, &repo, &key);
         assert!(result.is_ok());
         assert!(entry.encrypted);
-        assert!(dir_path.join("key.pem.enc").exists());
+        // File stays in-place with encrypted content
+        let enc = fs::read(dir_path.join("key.pem")).unwrap();
+        assert!(crate::crypto::is_encrypted_content(&enc));
     }
 
     #[test]

@@ -82,12 +82,7 @@ fn edit_encrypted_file(
     // Derive a safe temp file name from the original source basename.
     let basename = Path::new(&entry.source).file_name().map_or_else(
         || "dotling-edit".to_string(),
-        |n| {
-            // Strip .enc suffix from the basename for a nicer editor title.
-            // source is like "shell/zshrc", basename "zshrc" — no .enc here
-            // but encrypted templates have "shell/zshrc.dtmpl", basename "zshrc.dtmpl"
-            n.to_string_lossy().into_owned()
-        },
+        |n| n.to_string_lossy().into_owned(),
     );
 
     let tmp_dir = make_secure_temp_dir(repo_root)?;
@@ -132,7 +127,7 @@ fn edit_encrypted_file(
     Ok(())
 }
 
-/// For an encrypted directory: edit each .enc file in sequence.
+/// For an encrypted directory: edit each encrypted file in sequence.
 fn edit_encrypted_directory(
     entry: &crate::config::Entry,
     dir_path: &Path,
@@ -171,8 +166,7 @@ fn edit_encrypted_directory(
             fs::read(enc_file).map_err(|e| Error::io(enc_file, "read encrypted file", e))?;
         let plaintext = crate::crypto::decrypt_with_key(&ciphertext, master_key)?;
 
-        // Strip .enc from the temp file name so the editor uses the right syntax.
-        let tmp_name = enc_file.file_stem().map_or_else(
+        let tmp_name = enc_file.file_name().map_or_else(
             || "dotling-edit".to_string(),
             |s| s.to_string_lossy().into_owned(),
         );
@@ -424,7 +418,7 @@ fn remove_temp_dir(dir: &Path) {
 
 // ── Directory helpers ─────────────────────────────────────────────
 
-/// Recursively collect all `.enc` files under `dir`.
+/// Recursively collect all files under `dir`.
 fn collect_enc_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     collect_enc_files_inner(dir, &mut files)?;
@@ -438,7 +432,7 @@ fn collect_enc_files_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         let path = entry.path();
         if path.is_dir() {
             collect_enc_files_inner(&path, out)?;
-        } else if path.extension().and_then(|e| e.to_str()) == Some("enc") {
+        } else {
             out.push(path);
         }
     }

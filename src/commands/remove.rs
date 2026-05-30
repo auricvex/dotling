@@ -29,14 +29,7 @@ pub fn run(entries: &[String]) -> Result<()> {
             let target_is_symlink = crate::fs::is_symlink(&target);
             let target_exists = target.exists();
 
-            let repo_source = if entry.template {
-                // Template source includes the .dtmpl suffix already in entry.source
-                repo_root.join(&entry.source)
-            } else if entry.encrypted && !entry.directory {
-                repo_root.join(format!("{}.enc", entry.source))
-            } else {
-                repo_root.join(&entry.source)
-            };
+            let repo_source = repo_root.join(&entry.source);
 
             // We need to restore the target if it does not exist or if it is currently a symlink.
             // If it is already a regular file/directory, we do not touch it (to avoid overwriting
@@ -204,7 +197,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Recursively decrypt all `.enc` files in a directory to target.
+/// Recursively decrypt all encrypted files in a directory to target.
 fn decrypt_dir_to_target(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<()> {
     std::fs::create_dir_all(dst)
         .map_err(|e| crate::error::Error::io(dst, "create directory", e))?;
@@ -218,23 +211,23 @@ fn decrypt_dir_to_target(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<()> {
 
         if src_path.is_dir() {
             decrypt_dir_to_target(&src_path, &dst_path, key)?;
-        } else if src_path.extension().and_then(|e| e.to_str()) == Some("enc") {
-            let encrypted = std::fs::read(&src_path)
-                .map_err(|e| crate::error::Error::io(&src_path, "read encrypted", e))?;
-            let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
-            let dst_path_original = dst_path.with_extension("");
-            crate::fs::atomic_write(&dst_path_original, &plaintext)?;
-            // Set 0o600 for decrypted files on Unix
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(0o600);
-                std::fs::set_permissions(&dst_path_original, perms).map_err(|e| {
-                    crate::error::Error::io(&dst_path_original, "set permissions", e)
-                })?;
-            }
         } else {
-            crate::fs::copy_file(&src_path, &dst_path)?;
+            let content = std::fs::read(&src_path)
+                .map_err(|e| crate::error::Error::io(&src_path, "read", e))?;
+
+            if crate::crypto::is_encrypted_content(&content) {
+                let plaintext = crate::crypto::decrypt_with_key(&content, key)?;
+                crate::fs::atomic_write(&dst_path, &plaintext)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let perms = std::fs::Permissions::from_mode(0o600);
+                    std::fs::set_permissions(&dst_path, perms)
+                        .map_err(|e| crate::error::Error::io(&dst_path, "set permissions", e))?;
+                }
+            } else {
+                crate::fs::copy_file(&src_path, &dst_path)?;
+            }
         }
     }
 

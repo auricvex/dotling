@@ -26,19 +26,8 @@ pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod
         return EntryState::Missing;
     };
 
-    // Templates: source is the .dtmpl file itself (always present by name),
-    // and deployment is always copy mode (rendered output).
-    // Encrypted templates: source is the .dtmpl.enc file.
-    // Normal encrypted files: source is <name>.enc.
-    let source = if entry.template {
-        // The source field already contains the full name (e.g. "config/foo.dtmpl"
-        // or "config/foo.dtmpl.enc") — use it as-is.
-        repo_root.join(&entry.source)
-    } else if entry.encrypted && !entry.directory {
-        repo_root.join(format!("{}.enc", entry.source))
-    } else {
-        repo_root.join(&entry.source)
-    };
+    // Source is always the path stored in entry.source — no extensions appended.
+    let source = repo_root.join(&entry.source);
 
     if !target.exists() && !crate::fs::is_symlink(&target) {
         return EntryState::Missing;
@@ -77,18 +66,15 @@ pub fn check_state(entry: &Entry, repo_root: &Path, default_method: DeployMethod
                 // For encrypted files, we can't easily check if content matches
                 // without decrypting. Just check existence.
                 EntryState::Deployed
-            } else {
-                // For templates, the "source" for comparison is the deployed rendered file,
-                // not the .dtmpl file. We only need to know if the target exists.
+            } else if entry.template {
+                // For templates, the deployed file is rendered output.
                 // Fingerprint-based comparison happens in status/sync.
-                if entry.template {
-                    EntryState::Deployed
-                } else {
-                    match crate::fs::files_identical(&source, &target) {
-                        Ok(true) => EntryState::Deployed,
-                        Ok(false) => EntryState::Modified,
-                        Err(_) => EntryState::Broken,
-                    }
+                EntryState::Deployed
+            } else {
+                match crate::fs::files_identical(&source, &target) {
+                    Ok(true) => EntryState::Deployed,
+                    Ok(false) => EntryState::Modified,
+                    Err(_) => EntryState::Broken,
                 }
             }
         }
@@ -181,13 +167,7 @@ pub fn deploy_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Resu
         }
         deploy_encrypted_directory(&source, &target, &master_key)?;
     } else {
-        // For encrypted templates the .enc suffix is already part of entry.source
-        // (e.g. "shell/gitconfig.dtmpl.enc"); for plain encrypted files we append it.
-        let source = if entry.template {
-            repo_root.join(&entry.source)
-        } else {
-            repo_root.join(format!("{}.enc", entry.source))
-        };
+        let source = repo_root.join(&entry.source);
         if !source.exists() {
             return Err(Error::Deploy {
                 entry: entry.source.clone(),
@@ -227,24 +207,23 @@ fn deploy_encrypted_directory(src: &Path, dst: &Path, key: &[u8; 32]) -> Result<
         if src_path.is_dir() {
             let dst_path = dst.join(&file_name);
             deploy_encrypted_directory(&src_path, &dst_path, key)?;
-        } else if src_path.extension().and_then(|e| e.to_str()) == Some("enc") {
-            let encrypted =
-                fs::read(&src_path).map_err(|e| Error::io(&src_path, "read encrypted file", e))?;
-            let plaintext = crate::crypto::decrypt_with_key(&encrypted, key)?;
-
-            let dst_name = Path::new(&file_name).with_extension("");
-            let dst_path = dst.join(dst_name);
-            crate::fs::atomic_write(&dst_path, &plaintext)?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(0o600);
-                fs::set_permissions(&dst_path, perms).ok();
-            }
         } else {
+            let content = fs::read(&src_path).map_err(|e| Error::io(&src_path, "read file", e))?;
             let dst_path = dst.join(&file_name);
-            crate::fs::copy_file(&src_path, &dst_path)?;
+
+            if crate::crypto::is_encrypted_content(&content) {
+                let plaintext = crate::crypto::decrypt_with_key(&content, key)?;
+                crate::fs::atomic_write(&dst_path, &plaintext)?;
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let perms = std::fs::Permissions::from_mode(0o600);
+                    fs::set_permissions(&dst_path, perms).ok();
+                }
+            } else {
+                crate::fs::copy_file(&src_path, &dst_path)?;
+            }
         }
     }
     Ok(())
@@ -427,12 +406,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap();
-        let source = repo.join("zshrc.dtmpl");
+        let source = repo.join("zshrc");
         let target = temp.path().join(".zshrc");
         fs::write(&source, "template").unwrap();
         fs::write(&target, "rendered").unwrap();
 
-        let entry = make_template_entry("zshrc.dtmpl", &target.to_string_lossy(), false);
+        let entry = make_template_entry("zshrc", &target.to_string_lossy(), false);
         let state = check_state(&entry, &repo, DeployMethod::Symlink);
         assert_eq!(state, EntryState::Deployed);
     }

@@ -86,6 +86,11 @@ pub fn decrypt_with_key(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
         .map_err(|_| Error::Crypto("decryption failed — wrong key or corrupted data".into()))
 }
 
+/// Returns `true` if `data` starts with the `DOTLING-ENC-V2` header.
+pub fn is_encrypted_content(data: &[u8]) -> bool {
+    data.starts_with(HEADER.as_bytes()) && data.get(HEADER.len()) == Some(&b'\n')
+}
+
 // ── Internal helpers ──────────────────────────────────────────────
 
 /// Derive a 32-byte key from a password + salt using Argon2id.
@@ -325,5 +330,29 @@ mod tests {
     fn hex_encode_empty() {
         let result = hex_encode(b"");
         assert!(result.is_empty());
+    }
+
+    // ── is_encrypted_content tests ──────────────────────────────
+
+    #[test]
+    fn is_encrypted_content_detects_header() {
+        let key = [0x42u8; 32];
+        let encrypted = encrypt_with_key(b"secret", &key).unwrap();
+        assert!(is_encrypted_content(&encrypted));
+    }
+
+    #[test]
+    fn is_encrypted_content_rejects_plaintext() {
+        assert!(!is_encrypted_content(b"just plain text"));
+    }
+
+    #[test]
+    fn is_encrypted_content_rejects_partial_header() {
+        assert!(!is_encrypted_content(b"DOTLING-ENC-V"));
+    }
+
+    #[test]
+    fn is_encrypted_content_rejects_empty() {
+        assert!(!is_encrypted_content(b""));
     }
 }

@@ -34,12 +34,7 @@ pub fn run() -> Result<()> {
                         let state =
                             crate::deploy::check_state(entry, &repo_root, config.settings.method);
 
-                        let source_path = if entry.encrypted && !entry.directory && !entry.template
-                        {
-                            repo_root.join(format!("{}.enc", entry.source))
-                        } else {
-                            repo_root.join(&entry.source)
-                        };
+                        let source_path = repo_root.join(&entry.source);
 
                         // Check source exists in repo
                         if !source_path.exists() {
@@ -201,10 +196,7 @@ fn check_orphans(repo_root: &std::path::Path, config: &Config) {
         // Check if any entry tracks this file
         let is_tracked = config.entries.iter().any(|e| {
             let source = &e.source;
-            let enc_source = format!("{source}.enc");
-            rel_str == *source
-                || rel_str == enc_source
-                || rel_str.starts_with(&format!("{source}/"))
+            rel_str == *source || rel_str.starts_with(&format!("{source}/"))
         });
 
         if !is_tracked {

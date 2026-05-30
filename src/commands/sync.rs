@@ -719,15 +719,7 @@ fn resolve_encrypted_action(
     target: &Path,
     _prefer_actual: bool,
 ) -> SyncAction {
-    let enc_path = if entry.directory {
-        repo_root.join(&entry.source)
-    } else if entry.template {
-        // For encrypted templates the .enc suffix is already baked into entry.source
-        // (e.g. "shell/gitconfig.dtmpl.enc") — do NOT append another .enc.
-        repo_root.join(&entry.source)
-    } else {
-        repo_root.join(format!("{}.enc", entry.source))
-    };
+    let enc_path = repo_root.join(&entry.source);
     let enc_exists = enc_path.exists();
     let target_exists = target.exists() && !crate::fs::is_symlink(target);
 
@@ -822,13 +814,7 @@ fn pull_encrypted(entry: &Entry, repo_root: &Path, password: &str) -> Result<()>
         let repo_dir = repo_root.join(&entry.source);
         pull_encrypted_directory(&target, &repo_dir, entry, password)?;
     } else {
-        // For encrypted templates the .enc suffix is already part of entry.source
-        // (e.g. "shell/gitconfig.dtmpl.enc"); for plain encrypted files we append it.
-        let enc_path = if entry.template {
-            repo_root.join(&entry.source)
-        } else {
-            repo_root.join(format!("{}.enc", entry.source))
-        };
+        let enc_path = repo_root.join(&entry.source);
         let plaintext = fs::read(&target).map_err(|e| Error::io(&target, "read target", e))?;
         let master_key = crate::crypto::vault::unlock_vault(password)?;
         let encrypted = crate::crypto::encrypt_with_key(&plaintext, &master_key)?;
@@ -882,9 +868,7 @@ fn pull_encrypted_directory(
             let plaintext =
                 fs::read(&src_path).map_err(|e| Error::io(&src_path, "read target file", e))?;
             let encrypted = crate::crypto::encrypt_with_key(&plaintext, &master_key)?;
-
-            let enc_name = format!("{}.enc", file_name.to_string_lossy());
-            let enc_path = repo_dir.join(enc_name);
+            let enc_path = repo_dir.join(&file_name);
             crate::fs::atomic_write(&enc_path, &encrypted)?;
         }
     }
@@ -901,11 +885,7 @@ fn record_fingerprint_after_push(
     fp_dirty: &mut bool,
 ) {
     if entry.encrypted {
-        let enc_path = if entry.directory {
-            repo_root.join(&entry.source)
-        } else {
-            repo_root.join(format!("{}.enc", entry.source))
-        };
+        let enc_path = repo_root.join(&entry.source);
         if let Ok(target_path) = crate::path::expand_tilde(std::path::Path::new(&entry.target)) {
             if fp_store
                 .record(&entry.source, &enc_path, &target_path)
@@ -937,11 +917,7 @@ fn record_fingerprint_after_pull(
     fp_dirty: &mut bool,
 ) {
     if entry.encrypted {
-        let enc_path = if entry.directory {
-            repo_root.join(&entry.source)
-        } else {
-            repo_root.join(format!("{}.enc", entry.source))
-        };
+        let enc_path = repo_root.join(&entry.source);
         if let Ok(target_path) = crate::path::expand_tilde(std::path::Path::new(&entry.target)) {
             if fp_store
                 .record(&entry.source, &enc_path, &target_path)
