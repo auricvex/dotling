@@ -16,11 +16,11 @@ dotling encrypt <PATHS>
 
 ## Description
 
-`dotling encrypt` encrypts tracked entries using the vault's master key. The plaintext file in the repo is replaced with an encrypted `.enc` file. You'll be prompted for your vault password if the vault is locked.
+`dotling encrypt` encrypts tracked entries using the vault's master key. The plaintext file in the repo is replaced with an encrypted file in-place. You'll be prompted for your vault password if the vault is locked.
 
 ### Directories
 
-When encrypting a directory entry, each file within it is encrypted individually with its own `.enc` suffix.
+When encrypting a directory entry, each file within it is encrypted individually.
 
 ## Examples
 

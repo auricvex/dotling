@@ -16,7 +16,7 @@ dotling decrypt <PATHS>
 
 ## Description
 
-`dotling decrypt` decrypts encrypted entries and replaces the `.enc` files with plaintext in the repo. You'll be prompted for your vault password if the vault is locked. The entry's `encrypted` flag is removed from `dotling.toml`.
+`dotling decrypt` decrypts encrypted entries and replaces the encrypted files with plaintext in the repo. You'll be prompted for your vault password if the vault is locked. The entry's `encrypted` flag is removed from `dotling.toml`.
 
 ## Examples
 

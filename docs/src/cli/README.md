@@ -33,7 +33,7 @@ dotling is organized as a set of subcommands. Each command has its own page with
 |---|---|---|
 | `add` | `--copy` | Deploy as a copy instead of a symlink |
 | `add` | `--encrypt` | Encrypt the file(s) using the vault password |
-| `add` | `--template` | Track as a template (`.dtmpl`): rendered on each sync |
+| `add` | `--template` | Track as a template: rendered on each sync |
 | `add` | `--os <platform>` | Target OS: `linux`, `macos`, `windows` |
 | `sync` | `--dry-run` | Preview changes without modifying anything |
 | `sync` | `--force` | Overwrite conflicting files (repo wins) |

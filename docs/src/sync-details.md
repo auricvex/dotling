@@ -10,7 +10,7 @@
 |---|---|---|
 | **Symlink** | Create/fix symlink | Never (symlink always reads repo) |
 | **Copy** | Source newer or target missing | Target newer |
-| **Encrypted** | `.enc` newer or target missing -> decrypt | Target newer -> re-encrypt |
+| **Encrypted** | Source newer or target missing -> decrypt | Target newer -> re-encrypt |
 | **Template** | Always renders and deploys | Never (template source is canonical) |
 
 When both sides differ and timestamps are equal, dotling defaults to **repo wins** (push). Pass `--prefer-actual` to flip this.
@@ -69,7 +69,7 @@ Snapshots used as the merge base are stored in `~/.dotling/snapshots/<source>` a
 
 dotling uses Blake2s-256 content hashes stored in `~/.dotling/fingerprints.toml` for change detection. This avoids decrypting encrypted files just to check if they've changed.
 
-- After each successful sync, dotling records the content hashes of the source, target, and (if encrypted) the `.enc` file
+- After each successful sync, dotling records the content hashes of the source, target, and (if encrypted) the ciphertext
 - On subsequent checks, dotling compares current hashes against stored fingerprints
 - **Benefit:** `dotling status` and `dotling sync --dry-run` work instantly without entering your vault password
 

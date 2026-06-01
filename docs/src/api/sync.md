@@ -61,7 +61,7 @@ pub fn deploy_encrypted(
 ) -> Result<()>
 ```
 
-Deploys an encrypted entry: decrypts the `.enc` file and writes the plaintext to the target path.
+Deploys an encrypted entry: decrypts the repo file and writes the plaintext to the target path.
 
 ---
 

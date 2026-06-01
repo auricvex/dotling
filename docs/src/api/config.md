@@ -49,7 +49,7 @@ A tracked file or directory entry.
 | `method` | Override for the default deployment method |
 | `encrypted` | Whether the entry is encrypted |
 | `directory` | Whether the entry is a directory |
-| `template` | Whether the entry is a template (`.dtmpl`) |
+| `template` | Whether the entry is a template |
 | `os` | Platform restriction (`"linux"`, `"macos"`, `"windows"`, or `None` for all) |
 | `permissions` | Octal permissions applied on sync |
 | `before` | Entry-level pre-sync hook |

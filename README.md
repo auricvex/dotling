@@ -147,7 +147,7 @@ git push
 | `all` | `-v, --verbose` | Show hints and additional details |
 | `add` | `--copy` | Deploy as a copy instead of a symlink |
 | `add` | `--encrypt` | Encrypt the file(s) using the vault password |
-| `add` | `--template` | Track as a template (`.dtmpl`): rendered on each sync with machine-local variables |
+| `add` | `--template` | Track as a template: rendered on each sync with machine-local variables |
 | `add` | `--os <platform>` | Target OS: `linux` (alias: `darwin`), `macos`, `windows` (alias: `win`). Omit for all platforms |
 | `sync` | `--dry-run` | Preview changes without modifying anything |
 | `sync` | `--force` | Overwrite conflicting files (repo wins) |
@@ -173,7 +173,7 @@ dotling moves your config files into a central git repository and replaces them 
 |---|---|---|
 | **Symlink** | Create/fix symlink | Never (symlink always reads repo) |
 | **Copy** | Source newer or target missing | Target newer |
-| **Encrypted** | `.enc` newer or target missing → decrypt | Target newer → re-encrypt into `.enc` |
+| **Encrypted** | Source newer or target missing → decrypt | Target newer → re-encrypt |
 
 When both sides differ and timestamps are equal, dotling defaults to **repo wins** (push). Pass `--prefer-actual` to flip this.
 
@@ -277,7 +277,7 @@ You'll be prompted for a password (entered twice for confirmation). This creates
 dotling add ~/.ssh/config --encrypt
 ```
 
-dotling will read your local file, encrypt it, store the ciphertext (`config.enc`) in your git repo, and deploy the decrypted file locally with secure permissions.
+dotling will read your local file, encrypt it, store the ciphertext in your git repo, and deploy the decrypted file locally with secure permissions.
 
 ### 3. Sync encrypted entries
 
@@ -286,7 +286,7 @@ dotling will read your local file, encrypt it, store the ciphertext (`config.enc
 ```sh
 # Edit your deployed file, then sync it back
 vim ~/.ssh/config
-dotling sync   # detects the file is newer → re-encrypts into ssh/config.enc
+dotling sync   # detects the file is newer → re-encrypts
 ```
 
 ### 4. Migrating to a new machine
@@ -335,7 +335,7 @@ Some dotfiles contain machine-specific values — a hostname in a Nix flake, a u
 
 ### How it works
 
-Any file tracked with `--template` is stored in the repo as `<name>.dtmpl`. On every `sync`, dotling renders the template and writes the output to the deploy target — the repo source is never deployed directly.
+Any file tracked with `--template` is marked internally as a template. On every `sync`, dotling renders the template and writes the output to the deploy target — the repo source is never deployed directly.
 
 ```sh
 # 1. Set your machine-local variables (saved to ~/.dotling/vars.toml, never committed)
@@ -352,14 +352,14 @@ dotling sync
 ### Template syntax
 
 ```nix
-# ~/.config/nix-darwin/flake.nix.dtmpl
+# ~/.config/nix-darwin/flake.nix
 darwinConfigurations = {
   {{ var.hostname }} = darwin.lib.darwinSystem { ... };
 };
 ```
 
 ```toml
-# ~/.config/nix-darwin/configuration.nix.dtmpl
+# ~/.config/nix-darwin/configuration.nix
 system.primaryUser = "{{ var.primary_user }}";
 ```
 
@@ -500,7 +500,7 @@ Snapshots used as the merge base are stored in `~/.dotling/snapshots/<source>` a
 
 Previously, encrypted entries had to be decrypted to verify their sync state. dotling v0.5.0 introduces lightweight Blake2s-256 sync fingerprints stored in `~/.dotling/fingerprints.toml`.
 
-- After each successful sync, dotling records the content hashes of the `.enc` ciphertext and the local plaintext target.
+- After each successful sync, dotling records the content hashes of the encrypted ciphertext and the local plaintext target.
 - On subsequent `status` or `sync` checks, dotling compares current file hashes against the stored fingerprint.
 - **Benefits:** You can run `dotling status` or `dotling sync --dry-run` to audit your system instantly, without entering your vault password. A password is only requested when actual file modifications need to be decrypted or re-encrypted!
 - For copy-mode plain files and template entries, fingerprints track both repo source and target file hashes, enabling deterministic detection of which side has changed.

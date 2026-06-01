@@ -37,7 +37,7 @@ When adding a directory, dotling tracks it as a single entry in `dotling.toml` w
 
 ### Encryption
 
-With `--encrypt`, the file is encrypted using the vault's master key before being stored in the repo. The encrypted file gets an `.enc` suffix. You'll be prompted for your vault password if the vault is locked.
+With `--encrypt`, the file is encrypted using the vault's master key before being stored in the repo. You'll be prompted for your vault password if the vault is locked.
 
 ### Templates
 

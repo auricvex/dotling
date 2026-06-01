@@ -17,7 +17,7 @@ Your vault password is processed through **Argon2id** with a 32-byte random salt
 
 ### Encrypted file format
 
-Each encrypted file (`.enc`) uses this format:
+Each encrypted file uses this format:
 
 ```
 DOTLING-ENC-V2
@@ -43,7 +43,7 @@ You'll be prompted for a password (entered twice for confirmation).
 dotling add ~/.ssh/config --encrypt
 ```
 
-dotling reads your local file, encrypts it, stores the ciphertext (`config.enc`) in your git repo, and deploys the decrypted file locally with secure permissions.
+dotling reads your local file, encrypts it, stores the ciphertext in your git repo, and deploys the decrypted file locally with secure permissions.
 
 ### 3. Sync encrypted entries
 
@@ -52,12 +52,12 @@ dotling reads your local file, encrypts it, stores the ciphertext (`config.enc`)
 ```sh
 # Edit your deployed file, then sync it back
 vim ~/.ssh/config
-dotling sync   # detects the file is newer -> re-encrypts into ssh/config.enc
+dotling sync   # detects the file is newer -> re-encrypts
 ```
 
 | Direction | Trigger |
 |---|---|
-| Push (decrypt) | `.enc` file newer or target missing |
+| Push (decrypt) | Source file newer or target missing |
 | Pull (re-encrypt) | Target file newer |
 
 ### 4. Edit encrypted files
@@ -131,6 +131,6 @@ dotling vault change-password   # change the vault password
 
 Previously, encrypted entries had to be decrypted to verify their sync state. dotling uses lightweight Blake2s-256 sync fingerprints stored in `~/.dotling/fingerprints.toml`:
 
-- After each successful sync, dotling records the content hashes of the `.enc` ciphertext and the local plaintext target
+- After each successful sync, dotling records the content hashes of the encrypted ciphertext and the local plaintext target
 - On subsequent `status` or `sync` checks, dotling compares current file hashes against the stored fingerprint
 - **Benefit:** You can run `dotling status` or `dotling sync --dry-run` without entering your vault password. A password is only requested when actual file modifications need to be decrypted or re-encrypted.
