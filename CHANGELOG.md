@@ -6,7 +6,21 @@ Each release follows [Keep a Changelog](https://keepachangelog.com/) conventions
 
 ---
 
-## v0.9.0 (Unreleased)
+## v0.9.0
+
+### Added
+
+- **Inline script execution in templates** — `{{ \`command\` }}` syntax runs shell commands during template rendering. Scripts run via `sh -c` (or `cmd /C` on Windows) with the repo root as the working directory. Stdout replaces the tag, supports pipe filters (e.g. `{{ \`whoami\` | upper }}`). Skipped untrusted scripts act like unresolved variables, so `| default` still applies.
+
+### Changed
+
+- **Template validation** — `dotling add --template` now checks for any template tag (`{{ }}` or backtick script), not just variables.
+- **Documentation overhaul** — Full mdBook docs site with CLI reference, API docs, architecture overview, configuration guide, encryption details, and contributing guide. README examples updated to match current behavior.
+
+### Fixed
+
+- Removed stale `.enc` suffix references from documentation — encryption now works in-place.
+- Fixed mdbook installation URL in CI workflow.
 
 ---
 

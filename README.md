@@ -376,6 +376,30 @@ system.primaryUser = "{{ var.primary_user }}";
 | `{{ var.key \| upper }}` | Apply a filter (`upper`, `lower`, `trim`, `quote`, `squote`) |
 | `{{ var.key \| default "fallback" }}` | Use a fallback if the variable is not set |
 | `{{- expr -}}` | Strip surrounding whitespace (also `{{- expr }}` and `{{ expr -}}` for one-sided trimming) |
+| `{{ \`command\` }}` | Execute a shell command; stdout replaces the tag (supports pipe filters) |
+
+### Scripts
+
+Templates can execute inline shell commands using backticks inside template tags:
+
+```nix
+# Example: insert OS name
+{{ `uname -s` | lower }}
+
+# Example: fetch external IP with fallback
+{{ `curl -sSf https://api.ipify.org` | trim | default "unknown" }}
+```
+
+- **Interpreter**: Commands run via `sh -c` (Unix) or `cmd /C` (Windows).
+- **Environment**: Shell pipes, redirects, and environment variables work (e.g. `` {{ `echo $USER` }} ``).
+- **Whitespace**: Trailing newlines are trimmed automatically before filters apply.
+- **Failures**: Non-zero exit codes fail the render. Use the `default` filter for fallbacks: `` {{ `brew --prefix` | default "/opt/homebrew" }} ``.
+
+#### Script Security
+
+Arbitrary command execution during config syncing is a security risk for shared dotfiles. Dotling reuses the `HookSession` trust system to protect against malicious template scripts.
+
+When an untrusted script is encountered during `dotling sync` or `dotling add`, the user is interactively prompted to trust it. Trusted scripts are hashed and remembered in `~/.dotling/state/trusted_hooks`. In non-interactive environments (e.g. CI), untrusted scripts are skipped (which fails the template render unless caught by a `default` filter) unless explicitly allowed by setting `DOTLING_ALLOW_HOOKS=1`.
 
 ### Variable sources
 
