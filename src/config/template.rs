@@ -116,11 +116,52 @@ impl RenderContext {
 
 // ── Public API ─────────────────────────────────────────────────────
 
+/// Script execution capability for the renderer.
+pub enum Runner<'a> {
+    /// Pure rendering: variables and filters only.
+    Pure,
+    /// Script-capable rendering: backtick expressions may execute commands.
+    ScriptCapable {
+        /// Hook trust session used to verify script commands.
+        hook_session: &'a mut crate::hooks::HookSession,
+        /// Repository root used as the command working directory.
+        repo_root: &'a std::path::Path,
+        /// Whether to skip prompts for untrusted commands.
+        no_interactive: bool,
+    },
+}
+
 /// Render a template string with the given context.
 ///
 /// Returns the fully rendered string, or an `Error::Template` if any
 /// variable is unresolved or a filter is unknown.
 pub fn render(template_text: &str, ctx: &RenderContext, source_name: &str) -> Result<String> {
+    render_internal(template_text, ctx, source_name, &mut Runner::Pure)
+}
+
+/// Render a template string, allowing backtick script execution.
+pub fn render_with_scripts(
+    template_text: &str,
+    ctx: &RenderContext,
+    source_name: &str,
+    hook_session: &mut crate::hooks::HookSession,
+    repo_root: &std::path::Path,
+    no_interactive: bool,
+) -> Result<String> {
+    let mut runner = Runner::ScriptCapable {
+        hook_session,
+        repo_root,
+        no_interactive,
+    };
+    render_internal(template_text, ctx, source_name, &mut runner)
+}
+
+fn render_internal(
+    template_text: &str,
+    ctx: &RenderContext,
+    source_name: &str,
+    runner: &mut Runner,
+) -> Result<String> {
     let mut output = String::with_capacity(template_text.len());
     let mut remaining = template_text;
 
@@ -155,7 +196,7 @@ pub fn render(template_text: &str, ctx: &RenderContext, source_name: &str) -> Re
         }
 
         // Parse and resolve the expression
-        let value = eval_expr(expr, ctx, source_name)?;
+        let value = eval_expr(expr, ctx, source_name, runner)?;
 
         // Apply right-trim: skip leading whitespace in `remaining` after `}}`
         let rest_start = open_pos + 2 + close_pos + 2;
@@ -177,7 +218,40 @@ pub fn render(template_text: &str, ctx: &RenderContext, source_name: &str) -> Re
 }
 
 /// Evaluate a single template expression (variable + optional pipe filters).
-fn eval_expr(expr: &str, ctx: &RenderContext, source_name: &str) -> Result<String> {
+fn eval_expr(
+    expr: &str,
+    ctx: &RenderContext,
+    source_name: &str,
+    runner: &mut Runner,
+) -> Result<String> {
+    let expr = expr.trim();
+
+    // ── Script tag: `command` | filters ──────────────────────────────
+    if let Some(after_open) = expr.strip_prefix('`') {
+        let close_pos = after_open.find('`').ok_or_else(|| Error::Template {
+            source: source_name.to_string(),
+            message: "unclosed backtick in script tag".into(),
+        })?;
+        let command = after_open[..close_pos].trim();
+        let rest = after_open[close_pos + 1..].trim();
+
+        // After the closing backtick, we expect nothing or `| filters`.
+        let filter_part = if rest.is_empty() {
+            None
+        } else if let Some(stripped) = rest.strip_prefix('|') {
+            Some(stripped.trim())
+        } else {
+            return Err(Error::Template {
+                source: source_name.to_string(),
+                message: format!("expected `|` after script tag closing backtick, found `{rest}`"),
+            });
+        };
+
+        let raw_value = run_template_script(command, runner, source_name)?;
+        return apply_filters(raw_value, filter_part, source_name);
+    }
+
+    // ── Variable tag: namespace.key | filters ────────────────────────
     // Split on `|` into variable reference + filters
     let mut parts = expr.splitn(2, '|');
     let var_part = parts.next().unwrap_or("").trim();
@@ -191,6 +265,77 @@ fn eval_expr(expr: &str, ctx: &RenderContext, source_name: &str) -> Result<Strin
     let value = apply_filters(raw_value, filter_part, source_name)?;
 
     Ok(value)
+}
+
+/// Execute a backtick script command and return its trimmed stdout.
+///
+/// Returns `Ok(None)` if the command is untrusted and skipped — callers
+/// treat this like an unresolved variable so `| default` can still apply.
+fn run_template_script(
+    command: &str,
+    runner: &mut Runner,
+    source_name: &str,
+) -> Result<Option<String>> {
+    let Runner::ScriptCapable {
+        hook_session,
+        repo_root,
+        no_interactive,
+    } = runner
+    else {
+        return Err(Error::Template {
+            source: source_name.to_string(),
+            message: "scripts cannot be executed in this context (pure render)".into(),
+        });
+    };
+
+    if !hook_session.verify_and_allow(command, "template script", *no_interactive)? {
+        return Ok(None); // Skipped/untrusted scripts act like unresolved vars
+    }
+
+    crate::ui::info(&format!(
+        "Running template script: '{}'",
+        crate::ui::paint(crate::ui::CYAN, command)
+    ));
+
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.arg("/C").arg(command);
+        c
+    } else {
+        let mut c = std::process::Command::new("sh");
+        c.arg("-c").arg(command);
+        c
+    };
+
+    cmd.current_dir(&**repo_root);
+
+    let output = cmd.output().map_err(|e| Error::Template {
+        source: source_name.to_string(),
+        message: format!("failed to execute script `{command}`: {e}"),
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::Template {
+            source: source_name.to_string(),
+            message: format!(
+                "script `{command}` failed with {}: {}",
+                output.status,
+                stderr.trim()
+            ),
+        });
+    }
+
+    let mut stdout = String::from_utf8(output.stdout).map_err(|_| Error::Template {
+        source: source_name.to_string(),
+        message: format!("script `{command}` output is not valid UTF-8"),
+    })?;
+
+    // Trim trailing whitespace (newlines) from command output.
+    let trimmed_len = stdout.trim_end_matches(['\r', '\n', ' ', '\t']).len();
+    stdout.truncate(trimmed_len);
+
+    Ok(Some(stdout))
 }
 
 /// Parse `namespace.key` from a variable reference string.
@@ -305,6 +450,11 @@ pub fn scan_variables(template_text: &str) -> Vec<TemplateVar> {
             .trim_end_matches('-')
             .trim();
 
+        if expr.starts_with('`') {
+            remaining = &remaining[open_pos + 2 + close_pos + 2..];
+            continue;
+        }
+
         // Take only the variable part (before any `|`)
         let var_part = expr.split('|').next().unwrap_or("").trim();
 
@@ -325,6 +475,19 @@ pub fn scan_variables(template_text: &str) -> Vec<TemplateVar> {
     }
 
     vars
+}
+
+/// Check if a string contains any closed template tags (variables or scripts).
+pub fn has_template_tags(template_text: &str) -> bool {
+    let mut remaining = template_text;
+    while let Some(open_pos) = remaining.find("{{") {
+        let after_open = &remaining[open_pos + 2..];
+        if after_open.find("}}").is_some() {
+            return true;
+        }
+        remaining = after_open;
+    }
+    false
 }
 
 // ── Platform helpers ───────────────────────────────────────────────
@@ -573,5 +736,183 @@ mod tests {
         let ctx = RenderContext::new("/repo", &config_vars, &local_vars);
         let out = render("{{ var.key }}", &ctx, "t.dtmpl").unwrap();
         assert_eq!(out, "config_val");
+    }
+
+    // ── Script execution tests ─────────────────────────────────────
+
+    #[test]
+    fn eval_script_fails_in_pure_mode() {
+        let ctx = test_ctx();
+        let result = render("{{ `echo hello` }}", &ctx, "test.dtmpl");
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("cannot be executed in this context")
+        );
+    }
+
+    #[test]
+    fn scan_variables_ignores_scripts() {
+        let vars = scan_variables("{{ `echo $USER` | upper }} {{ var.x }}");
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].key, "x");
+    }
+
+    #[test]
+    fn render_with_scripts_executes_and_filters() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(true, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            "{{ `echo hello` | upper }}",
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            false,
+        )
+        .unwrap();
+        assert_eq!(result, "HELLO");
+    }
+
+    #[test]
+    fn render_with_scripts_trims_trailing_newline() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(true, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            "{{ `printf 'hello'` }}",
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            false,
+        )
+        .unwrap();
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn render_with_scripts_handles_shell_pipes() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(true, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            "{{ `echo 'foo bar baz' | awk '{print $2}'` }}",
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            false,
+        )
+        .unwrap();
+        assert_eq!(result, "bar");
+    }
+
+    #[test]
+    fn render_with_scripts_skips_untrusted_noninteractive() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(false, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            "{{ `echo hello` }}",
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            true,
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unresolved variable")
+        );
+    }
+
+    #[test]
+    fn render_with_scripts_default_filter_on_skip() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(false, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            r#"{{ `echo hello` | default "fallback" }}"#,
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            true,
+        )
+        .unwrap();
+        assert_eq!(result, "fallback");
+    }
+
+    #[test]
+    fn render_with_scripts_fails_on_nonzero_exit() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(true, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            "{{ `false` }}",
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            false,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("failed with"));
+    }
+
+    #[test]
+    fn render_with_scripts_unclosed_backtick() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(&repo_root).unwrap();
+
+        let mut hook_session = crate::hooks::HookSession::new(true, false);
+        let ctx = test_ctx();
+
+        let result = render_with_scripts(
+            "{{ `echo hello }}",
+            &ctx,
+            "test.dtmpl",
+            &mut hook_session,
+            &repo_root,
+            false,
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unclosed backtick")
+        );
     }
 }

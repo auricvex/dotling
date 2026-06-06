@@ -191,6 +191,8 @@ pub fn run(
                 &mut password_cache,
                 &mut fp_store,
                 &mut fp_dirty,
+                &mut hook_session,
+                no_interactive,
             );
 
             match template_result {
@@ -956,6 +958,8 @@ fn sync_template_entry(
     password_cache: &mut Option<String>,
     fp_store: &mut FingerprintStore,
     fp_dirty: &mut bool,
+    hook_session: &mut crate::hooks::HookSession,
+    no_interactive: bool,
 ) -> Result<bool> {
     let source_path = repo_root.join(&entry.source);
 
@@ -989,7 +993,14 @@ fn sync_template_entry(
         crate::template::RenderContext::new(repo_root_str, config_vars, &var_store.as_pairs());
 
     // Render
-    let rendered = crate::template::render(&template_text, &ctx, &entry.source)?;
+    let rendered = crate::template::render_with_scripts(
+        &template_text,
+        &ctx,
+        &entry.source,
+        hook_session,
+        repo_root,
+        no_interactive,
+    )?;
 
     // Expand target path
     let target_path = crate::path::expand_tilde(std::path::Path::new(&entry.target))?;

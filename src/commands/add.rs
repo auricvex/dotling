@@ -121,11 +121,10 @@ fn add_template_file(
     let template_text =
         fs::read_to_string(file_path).map_err(|e| Error::io(file_path, "read template file", e))?;
 
-    // Scan for variables — warn if none found
-    let vars_found = crate::template::scan_variables(&template_text);
-    if vars_found.is_empty() {
+    // Warn if the source has no template tags at all.
+    if !crate::template::has_template_tags(&template_text) {
         ui::warning(&format!(
-            "`{}` has no template variables (`{{{{ }}}}`) — add with --template anyway",
+            "`{}` has no template tags (`{{{{ }}}}`) — add with --template anyway",
             file_path.display()
         ));
     }
@@ -189,9 +188,9 @@ fn add_template_file(
             source: source_str.clone(),
             message: "template is not valid UTF-8".into(),
         })?;
-        render_with_context(&plaintext, &source_str, config)?
+        render_with_context(&plaintext, &source_str, config, repo_root)?
     } else {
-        render_with_context(&template_text, &source_str, config)?
+        render_with_context(&template_text, &source_str, config, repo_root)?
     };
 
     crate::fs::atomic_write(&expanded_target, rendered.as_bytes())?;
@@ -212,7 +211,12 @@ fn add_template_file(
 
 /// Build a render context and render template text, reporting unresolved
 /// variables with fix hints.
-fn render_with_context(template_text: &str, source_name: &str, config: &Config) -> Result<String> {
+fn render_with_context(
+    template_text: &str,
+    source_name: &str,
+    config: &Config,
+    repo_root: &Path,
+) -> Result<String> {
     // Load local var store (best-effort; missing file is fine)
     let local_vars = VarStore::load().map(|s| s.as_pairs()).unwrap_or_default();
 
@@ -259,7 +263,15 @@ fn render_with_context(template_text: &str, source_name: &str, config: &Config) 
         });
     }
 
-    crate::template::render(template_text, &ctx, source_name)
+    let mut hook_session = crate::hooks::HookSession::new(false, false);
+    crate::template::render_with_scripts(
+        template_text,
+        &ctx,
+        source_name,
+        &mut hook_session,
+        repo_root,
+        false,
+    )
 }
 
 // ── Plain file ─────────────────────────────────────────────────────

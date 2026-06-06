@@ -78,6 +78,26 @@ This is useful for controlling indentation in generated files:
 {{- end -}}
 ```
 
+### Scripts
+
+Templates can execute inline shell commands and insert their standard output into the document using backticks inside template tags:
+
+```
+{{ `uname -s` | lower }}
+{{ `curl -sSf https://api.ipify.org` | trim }}
+```
+
+- **Interpreter**: Commands are executed using `sh -c` on Unix and `cmd /C` on Windows.
+- **Environment**: Internal shell pipes, redirects, and environment variables work as expected (e.g. `` {{ `echo $USER` }} ``).
+- **Whitespace**: A command's output usually ends with a trailing newline. Dotling trims trailing whitespace automatically before the value is processed by filters, so it substitutes cleanly inline.
+- **Failures**: A non-zero exit code or an execution failure fails the template render immediately. You can use the `` `default` `` filter to catch command failures and provide a fallback value: `` {{ `brew --prefix` | default "/opt/homebrew" }} ``.
+
+#### Script Security
+
+Arbitrary command execution during config syncing is a security risk for shared dotfiles. Dotling reuses the `HookSession` trust system to protect against malicious template scripts.
+
+When an untrusted script is encountered during `dotling sync` or `dotling add`, the user is interactively prompted to trust it. Trusted scripts are hashed and remembered in `~/.dotling/trusted_hooks`. In non-interactive environments (e.g. CI), untrusted scripts are skipped (which fails the template render unless caught by a `default` filter) unless explicitly allowed by setting `DOTLING_ALLOW_HOOKS=1`.
+
 ## Variable sources
 
 Variables are resolved in priority order:
